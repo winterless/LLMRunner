@@ -1,0 +1,108 @@
+<mxfile host="65bd71144e">
+    <diagram id="93I3gmVCRMZwOouhZX0S" name="Optimized Pipeline v2 (flattened)">
+        <mxGraphModel dx="1368" dy="993" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1920" pageHeight="1400" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="box_inputs" value="&lt;b&gt;Inputs&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#94a3b8;strokeWidth=2;dashed=1;dashPattern=6 4;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;fontColor=#0f172a;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="80" width="480" height="400" as="geometry"/>
+                </mxCell>
+                <mxCell id="box_core" value="&lt;b&gt;Unified Registry&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#94a3b8;strokeWidth=2;dashed=1;dashPattern=6 4;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;fontColor=#0f172a;" parent="1" vertex="1">
+                    <mxGeometry x="560" y="80" width="640" height="400" as="geometry"/>
+                </mxCell>
+                <mxCell id="4" style="edgeStyle=none;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="box_jobs" target="2">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="box_jobs" value="&lt;b&gt;Jobs&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#94a3b8;strokeWidth=2;dashed=1;dashPattern=6 4;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;fontColor=#0f172a;" parent="1" vertex="1">
+                    <mxGeometry x="1300" y="80" width="560" height="400" as="geometry"/>
+                </mxCell>
+                <mxCell id="5" style="edgeStyle=none;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="box_eval" target="2">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="box_eval" value="&lt;b&gt;Eval / Release&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#94a3b8;strokeWidth=2;dashed=1;dashPattern=6 4;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;fontColor=#0f172a;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="510" width="1140" height="260" as="geometry"/>
+                </mxCell>
+                <mxCell id="t_inputs" value="&lt;b&gt;数据输入&lt;/b&gt;" style="text;html=1;align=left;verticalAlign=top;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;fontColor=#0f172a;" parent="1" vertex="1">
+                    <mxGeometry x="80" y="90" width="70" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="t_core" value="&lt;b&gt;统一注册中心&lt;/b&gt;" style="text;html=1;align=left;verticalAlign=top;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;fontColor=#0f172a;" parent="1" vertex="1">
+                    <mxGeometry x="580" y="90" width="90" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="t_jobs" value="&lt;b&gt;作业层(无状态)&lt;/b&gt;" style="text;html=1;align=left;verticalAlign=top;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;fontColor=#0f172a;" parent="1" vertex="1">
+                    <mxGeometry x="1260" y="90" width="110" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="raw_data" value="原始数据&lt;br&gt;多来源/多schema&lt;br&gt;(包含CPT/SFT候选样本)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#64748b;fontSize=12;fontColor=#0f172a;" parent="1" vertex="1">
+                    <mxGeometry x="100" y="120" width="400" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="udatasets" value="Udatasets处理&lt;br&gt;数据增强 + schema校验 + 去重/清洗&lt;br&gt;输出: CPT/SFT数据(manifest)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#64748b;fontSize=12;fontColor=#0f172a;" parent="1" vertex="1">
+                    <mxGeometry x="100" y="205" width="400" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="artifact_store" value="制品仓库&lt;br&gt;OBS + Manifest + 版本号&lt;br&gt;obs://datasets/{name}/{ver}/" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontSize=12;fontColor=#0f172a;strokeWidth=2;" parent="1" vertex="1">
+                    <mxGeometry x="620" y="170" width="520" height="170" as="geometry"/>
+                </mxCell>
+                <mxCell id="tokenize" value="Tokenize作业&lt;br&gt;输出: bin/idx + manifest" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#64748b;fontSize=12;fontColor=#0f172a;" parent="1" vertex="1">
+                    <mxGeometry x="1340" y="105" width="500" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="cpt_train" value="CPT训练&lt;br&gt;输入: 版本化数据集(manifest)&lt;br&gt;输出: mg checkpoint + metadata" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#64748b;fontSize=12;fontColor=#0f172a;" parent="1" vertex="1">
+                    <mxGeometry x="1340" y="200" width="500" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="sft_train" value="SFT训练&lt;br&gt;输入: SFT数据(manifest) + CPT基座(mg checkpoint)&lt;br&gt;输出: mg checkpoint + metadata" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#64748b;fontSize=12;fontColor=#0f172a;" parent="1" vertex="1">
+                    <mxGeometry x="1340" y="300" width="500" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="convert" value="统一转换/打包(唯一一处)&lt;br&gt;mg → HF(safetensors)&lt;br&gt;打包tokenizer/config/README&lt;br&gt;(同一套脚本/CI任务)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2fe;strokeColor=#0284c7;fontSize=12;fontColor=#0f172a;strokeWidth=2;" parent="1" vertex="1">
+                    <mxGeometry x="1340" y="390" width="500" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="archive" value="归档模型，测试准备" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#64748b;fontSize=12;fontColor=#0f172a;" parent="1" vertex="1">
+                    <mxGeometry x="450" y="540" width="420" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="eval_runner" value="评测集 / 评测Runner" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#64748b;fontSize=12;fontColor=#0f172a;" parent="1" vertex="1">
+                    <mxGeometry x="90" y="650" width="520" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="report" value="评测报告/指标&lt;br&gt;obs://reports/{model}/{run_id}/" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#64748b;fontSize=12;fontColor=#0f172a;" parent="1" vertex="1">
+                    <mxGeometry x="650" y="650" width="520" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_raw_ud" style="edgeStyle=none;endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#ffffff;fontColor=#ffffff;" parent="1" source="raw_data" target="udatasets" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_ud_art" value="write: manifest" style="edgeStyle=none;endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#ffffff;fontColor=#ffffff;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" parent="1" source="udatasets" target="artifact_store" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_art_tok" value="read: manifest" style="edgeStyle=none;endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#ffffff;fontColor=#ffffff;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="artifact_store" target="tokenize" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1364" y="180" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_tok_art" value="write: bin/idx + manifest" style="edgeStyle=none;endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#ffffff;fontColor=#ffffff;exitX=0;exitY=0.5;exitDx=0;exitDy=0;" parent="1" source="tokenize" target="artifact_store" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_art_cpt" value="read: tokenized dataset" style="edgeStyle=none;endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#ffffff;fontColor=#ffffff;" parent="1" source="artifact_store" target="cpt_train" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_art_sft" style="edgeStyle=none;endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#ffffff;fontColor=#ffffff;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="artifact_store" target="sft_train" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_cpt_base_sft" value="base: CPT checkpoint" style="edgeStyle=none;endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#ffffff;fontColor=#ffffff;" parent="1" source="cpt_train" target="sft_train" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_sft_conv" style="edgeStyle=none;endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#ffffff;fontColor=#ffffff;" parent="1" source="sft_train" target="convert" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_art_archive" style="edgeStyle=none;endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#ffffff;fontColor=#ffffff;" parent="1" source="artifact_store" target="archive" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_archive_eval" style="edgeStyle=none;endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#ffffff;fontColor=#ffffff;" parent="1" source="archive" target="eval_runner" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_eval_report" style="edgeStyle=none;endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#ffffff;fontColor=#ffffff;" parent="1" source="eval_runner" target="report" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="2" value="&lt;b&gt;Jobs&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#94a3b8;strokeWidth=2;dashed=1;dashPattern=6 4;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;fontColor=#0f172a;" vertex="1" parent="1">
+                    <mxGeometry x="1300" y="510" width="560" height="260" as="geometry"/>
+                </mxCell>
+                <mxCell id="3" value="实验过程记录" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#64748b;fontSize=12;fontColor=#0f172a;" vertex="1" parent="1">
+                    <mxGeometry x="1320" y="560" width="520" height="60" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
