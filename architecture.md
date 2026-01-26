@@ -68,7 +68,8 @@ LLMRunner/
     pipeline.env               # enable/disable steps, DRY_RUN, workdir
     steps/
       udatasets.env
-      tokenize.env
+      tokenize_cpt.env
+      tokenize_sft.env
       train_cpt.env
       train_sft.env
       convert.env
@@ -77,22 +78,46 @@ LLMRunner/
   scripts/
     run.sh                     # shell runner (logs, run_id, orchestration)
     steps/
-      udatasets.sh
-      tokenize.sh
-      train_cpt.sh
-      train_sft.sh
-      convert.sh
-      eval.sh
+      1.udatasets.sh
+      2.tokenize_cpt.sh
+      3.tokenize_sft.sh
+      3.train_cpt.sh
+      4.train_sft.sh
+      5.convert.sh
+      6.eval.sh
 ```
 
 ### Execution model
 
 - `scripts/run.sh` 只负责：
-- 读取 `configs/pipeline.env`（现由 `python3 scripts/run.py` 管理；`scripts/run.sh` 为 wrapper）
+- 读取 `<config_root>/pipeline.env`（现由 `python3 scripts/run.py` 管理；`scripts/run.sh` 为 wrapper）
   - 决定每步是否启用（`STEP_<STEP>_ENABLED=1`）
   - 统一日志目录：`${WORKDIR}/logs/${RUN_ID}/<step>.log`
   - `DRY_RUN=1` 时只打印命令
 - 每个 step 脚本只负责“如何跑”：
-  - 读取自己的 `configs/steps/<step>.env`
+  - 读取自己的 `<config_root>/steps/<step>.env`
   - 组装并执行你指定的命令（Megatron/MindSpeed/bfcl_v3/任意 shell）
+
+### Backends: Ascend (MindSpeed) vs NVIDIA
+
+| Step | 差异 | 说明 |
+|------|------|------|
+| 1 udatasets | 无 | 与硬件无关，数据准备一致。 |
+| 2 tokenize_cpt | 无 | 使用 Megatron-LM `preprocess_data.py`，输出 .bin/.idx 两边通用；NVIDIA 上也用同一套 tokenize。 |
+| 3 tokenize_sft | 无 | 使用 Megatron-LM `preprocess_data.py`，输出 .bin/.idx 两边通用；NVIDIA 上也用同一套 tokenize。 |
+| 3 train_cpt | **有** | Ascend: MindSpeed `pretrain_gpt.py`；NVIDIA: Megatron-LM/DeepSpeed `pretrain_gpt.py`，launcher 为 `torchrun` 等。 |
+| 4 train_sft | **有** | Ascend: MindSpeed `posttrain_gpt.py`；NVIDIA: Megatron SFT 或 HF/LLaMA-Factory 等，入口与参数不同。 |
+| 5 convert | **有** | Ascend: MindSpeed `convert_ckpt.py`；NVIDIA: Megatron→HF 转换脚本（仓库/参数不同）。 |
+| 6 eval | 无/极小 | 输入均为 HF 模型目录，评测命令可共用。 |
+
+**差异化部分管理方式**：用**独立实验配置**区分后端；**不在脚本里做优先/默认**，完全按配置执行。
+
+- **RUN_WITH**（必填，无默认）：在**各 step 的 env 文件**里显式指定。
+  - `RUN_WITH=entrypoint`：执行 `python ${ENTRYPOINT} ${ARGS}`（MindSpeed 等）。
+  - `RUN_WITH=cmd`：执行整条命令 `TRAIN_CMD`（step3/4）或 `CONVERT_CMD`（step5）（NVIDIA 等）。
+- **TRAIN_CMD / CONVERT_CMD 配置位置**：写在对应 step 的 env 里（3.train_cpt.env、4.train_sft.env、5.convert.env）。与 pipeline.env 无关。
+- **CPT_RAW_COPY_SRC**：写在 **steps/2.tokenize_cpt.env**；prepare_exp 从该文件读取。
+- **SFT_RAW_COPY_SRC**：写在 **steps/3.tokenize_sft.env**；prepare_exp 和 step 4 从该文件读取。
+- MindSpeed 实验：steps 3/4/5 中设置 `RUN_WITH=entrypoint`、`MINDSPEED_DIR`、`ENTRYPOINT`、`ARGS`。
+- NVIDIA 实验：steps 3/4/5 中设置 `RUN_WITH=cmd`、`TRAINER_DIR`、`TRAIN_CMD` 或 `CONVERT_CMD`（一条完整命令）。
 

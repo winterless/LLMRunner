@@ -1,0 +1,44 @@
+# --- LLMRunner runtime outputs ---
+.llmrunner/
+
+# --- Datapool (large artifacts) ---
+# Keep only skeleton files in git.
+datapool/**
+!datapool/README.md
+!datapool/**/.gitkeep
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+
+# --- Virtual envs ---
+.venv/
+venv/
+ENV/
+
+# --- OS / IDE ---
+.DS_Store
+.idea/
+.vscode/
+
+# --- Common large ML artifacts (in case they land outside datapool) ---
+*.pt
+*.pth
+*.ckpt
+*.bin
+*.safetensors
+*.onnx
+*.npz
+*.npy
+
+# --- Optional local overrides (do not commit) ---
+*.local.env
+*.local
+

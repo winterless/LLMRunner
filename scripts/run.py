@@ -3,14 +3,16 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, List, Optional
 
 
-STEP_ORDER: List[str] = ["udatasets", "tokenize", "train_cpt", "train_sft", "convert", "eval"]
+STEP_ORDER: List[str] = ["udatasets", "tokenize_cpt", "tokenize_sft", "train_cpt", "train_sft", "convert", "eval"]
+STEP_NUM: Dict[str, int] = {step: i + 1 for i, step in enumerate(STEP_ORDER)}
 
 
 def parse_env_file(path: Path) -> Dict[str, str]:
@@ -73,9 +75,145 @@ def tee_process(proc: subprocess.Popen, log_path: Path) -> int:
         return proc.wait()
 
 
+def clear_output_directory(output_dir: Path, step_name: str, dry_run: bool = False) -> None:
+    """
+    Clear output directory before running a step.
+    
+    Args:
+        output_dir: Directory to clear
+        step_name: Step name for logging
+        dry_run: If True, only print what would be cleared
+    """
+    if not output_dir.exists():
+        return
+    
+    if not output_dir.is_dir():
+        # If it's a file, remove it
+        if not dry_run:
+            output_dir.unlink()
+        return
+    
+    # Count files before clearing
+    files_before = list(output_dir.rglob("*"))
+    file_count = len([f for f in files_before if f.is_file()])
+    
+    if file_count == 0:
+        return
+    
+    if dry_run:
+        print(f"[dry-run] {step_name}: would clear {file_count} files from {output_dir}")
+        return
+    
+    # Clear directory contents (but keep the directory itself)
+    for item in output_dir.iterdir():
+        if item.is_file():
+            item.unlink()
+        elif item.is_dir():
+            shutil.rmtree(item)
+    
+    print(f"[{time.strftime('%F %T')}] {step_name}: cleared {file_count} files from {output_dir}")
+
+
+def get_step_output_dir(
+    step: str,
+    config_dir: Path,
+    root_dir: Path,
+    datapool_root: Path,
+) -> Optional[Path]:
+    """
+    Get the output directory for a step by loading its config.
+    
+    Returns:
+        Output directory path, or None if cannot be determined
+    """
+    # Import config utilities using importlib to avoid name conflicts
+    import importlib.util
+    utils_dir = root_dir / "scripts" / "utils"
+    config_utils_path = utils_dir / "config.py"
+    
+    if not config_utils_path.exists():
+        return None
+    
+    spec = importlib.util.spec_from_file_location("config_utils", config_utils_path)
+    if spec is None or spec.loader is None:
+        return None
+    
+    config_utils = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(config_utils)
+    
+    load_config_module = config_utils.load_config_module
+    resolve_config_vars = config_utils.resolve_config_vars
+    
+    # Load step config
+    step_config_py = config_dir / "steps" / f"{STEP_NUM[step]}.{step}.py"
+    step_config_unnumbered = config_dir / "steps" / f"{step}.py"
+    
+    if step_config_py.exists():
+        step_config_path = step_config_py
+    elif step_config_unnumbered.exists():
+        step_config_path = step_config_unnumbered
+    else:
+        return None
+    
+    try:
+        config = load_config_module(step_config_path)
+        context = {
+            "DATAPOOL_ROOT": str(datapool_root),
+            "ROOT_DIR": str(root_dir),
+        }
+        config = resolve_config_vars(config, context)
+        
+        # Determine output directory based on step type
+        if step == "tokenize_cpt":
+            output_prefix = config.get("OUTPUT_PREFIX")
+            if output_prefix:
+                return Path(output_prefix).parent
+        elif step == "tokenize_sft":
+            output_prefix = config.get("OUTPUT_PREFIX") or config.get("SFT_OUTPUT_PREFIX")
+            if output_prefix:
+                return Path(output_prefix).parent
+        elif step == "train_cpt":
+            # Checkpoint directory - may be in config or default location
+            checkpoint_dir = config.get("CHECKPOINT_DIR") or config.get("CPT_CHECKPOINT_DIR")
+            if checkpoint_dir:
+                return Path(checkpoint_dir)
+            # Default: datapool/model/cpt_checkpoints
+            return datapool_root / "model" / "cpt_checkpoints"
+        elif step == "train_sft":
+            checkpoint_dir = config.get("CHECKPOINT_DIR") or config.get("SFT_CHECKPOINT_DIR")
+            if checkpoint_dir:
+                return Path(checkpoint_dir)
+            # Default: datapool/model/sft_checkpoints
+            return datapool_root / "model" / "sft_checkpoints"
+        elif step == "convert":
+            output_dir = config.get("OUTPUT_DIR") or config.get("HF_OUTPUT_DIR")
+            if output_dir:
+                return Path(output_dir)
+            # Default: datapool/model/hf
+            return datapool_root / "model" / "hf"
+        elif step == "eval":
+            output_dir = config.get("OUTPUT_DIR") or config.get("REPORT_DIR")
+            if output_dir:
+                return Path(output_dir)
+            # Default: datapool/reports
+            return datapool_root / "reports"
+        elif step == "udatasets":
+            output_dir = config.get("OUTPUT_DIR")
+            if output_dir:
+                return Path(output_dir)
+            # Default: datapool/data/processed
+            return datapool_root / "data" / "processed"
+    except Exception as e:
+        # If config loading fails, return None (will skip clearing)
+        return None
+    
+    return None
+
+
 def run_step(
     *,
     root_dir: Path,
+    config_dir: Path,
     step: str,
     pipeline_env: Dict[str, str],
     run_id: str,
@@ -94,16 +232,32 @@ def run_step(
         log(f"skip step={step} ({enabled_key}={enabled})")
         return
 
-    step_script = root_dir / "scripts" / "steps" / f"{step}.sh"
+    if step not in STEP_NUM:
+        raise SystemExit(f"Unknown step: {step}")
+    
+    # All steps now use Python scripts only
+    step_script = root_dir / "scripts" / "steps" / f"{STEP_NUM[step]}.{step}.py"
+    
     if not step_script.exists():
         raise SystemExit(f"Step script not found: {step_script}")
 
-    step_env_path = root_dir / "configs" / "steps" / f"{step}.env"
-    step_env = parse_env_file(step_env_path)
+    # Default: numbered step config (.py); fallback to unnumbered
+    # All steps now use Python config files (.py) only
+    step_config_py = config_dir / "steps" / f"{STEP_NUM[step]}.{step}.py"
+    step_config_unnumbered = config_dir / "steps" / f"{step}.py"
+    
+    if step_config_py.exists():
+        step_config_path = step_config_py
+    elif step_config_unnumbered.exists():
+        step_config_path = step_config_unnumbered
+    else:
+        step_config_path = step_config_py  # Will be passed but may not exist
+    
+    # Python scripts load config themselves
+    step_env = {}  # Python scripts load config themselves
 
     env = os.environ.copy()
     datapool_root = pipeline_env.get("DATAPOOL_ROOT", str(root_dir / "datapool"))
-    run_dir = str((Path(datapool_root).expanduser().resolve() / "intermediates" / run_id))
     # Basic safety check: require datapool to be inside this repo by default.
     # (User can override, but the default should keep data co-located.)
     try:
@@ -117,24 +271,31 @@ def run_step(
     env.update(
         {
             "ROOT_DIR": str(root_dir),
+            "CONFIG_DIR": str(config_dir),
+            "STEP_ENV_PATH": str(step_config_path),
             "RUN_ID": run_id,
             "WORKDIR": str(workdir),
             "LOG_DIR": str(log_dir),
             "DRY_RUN": dry_run,
             "DATAPOOL_ROOT": datapool_root,
-            "RUN_DIR": run_dir,
-            # escape hatch (default 0): allow steps to read/write outside DATAPOOL_ROOT
-            "ALLOW_EXTERNAL_PATHS": pipeline_env.get("ALLOW_EXTERNAL_PATHS", "0"),
         }
     )
-    env.update(step_env)
+    # Python scripts load config themselves, no need to update env
+
+    # Clear output directory before running the step
+    output_dir = get_step_output_dir(step, config_dir, root_dir, Path(datapool_root))
+    if output_dir:
+        clear_output_directory(output_dir, step, dry_run=(dry_run == "1"))
 
     log(f"run step={step}")
     if dry_run == "1":
         print(f"[dry-run] would run: {step_script}")
         # still invoke the script in dry-run mode so it can print the planned command
+    
+    cmd = ["python3", str(step_script)]
+    
     proc = subprocess.Popen(
-        ["bash", str(step_script)],
+        cmd,
         cwd=str(root_dir),
         env=env,
         stdout=subprocess.PIPE,
@@ -151,6 +312,11 @@ def run_step(
 def main(argv: List[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python scripts/run.py")
     ap.add_argument("-c", "--config", required=True, help="Path to pipeline.env")
+    ap.add_argument(
+        "--prepare-only",
+        action="store_true",
+        help="Only create datapool/workdir structure, do not execute any steps",
+    )
     args = ap.parse_args(argv)
 
     root_dir = Path(__file__).resolve().parent.parent
@@ -158,13 +324,17 @@ def main(argv: List[str] | None = None) -> int:
     if not pipeline_env_path.exists():
         raise SystemExit(f"Config not found: {pipeline_env_path}")
 
+    # Convention: a config root is the directory containing pipeline.env.
+    # It must contain steps/<step>.env alongside pipeline.env.
+    config_dir = pipeline_env_path.parent
+
     pipeline_env = parse_env_file(pipeline_env_path)
 
-    run_id = pipeline_env.get("RUN_ID") or now_run_id()
+    # 产出路径按实验唯一，不再用 RUN_ID 分层；run_id 仅用于日志目录（默认 "run"）
+    run_id = pipeline_env.get("RUN_ID", "").strip() or "run"
     workdir = Path(pipeline_env.get("WORKDIR") or (root_dir / ".llmrunner")).expanduser().resolve()
-    log_dir = Path(pipeline_env.get("LOG_DIR") or (workdir / "logs" / run_id)).expanduser().resolve()
+    log_dir = (workdir / "logs" / run_id).resolve()
     datapool_root = Path(pipeline_env.get("DATAPOOL_ROOT") or (root_dir / "datapool")).expanduser().resolve()
-    run_dir = datapool_root / "intermediates" / run_id
 
     workdir.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -177,18 +347,21 @@ def main(argv: List[str] | None = None) -> int:
         datapool_root / "model" / "sft_checkpoints",
         datapool_root / "model" / "hf",
         datapool_root / "reports",
-        datapool_root / "intermediates",
-        run_dir,
     ]:
         p.mkdir(parents=True, exist_ok=True)
 
     print(
-        f"[{time.strftime('%F %T')}] run_id={run_id} workdir={workdir} datapool_root={datapool_root} run_dir={run_dir} dry_run={pipeline_env.get('DRY_RUN','0')}"
+        f"[{time.strftime('%F %T')}] run_id={run_id} config_dir={config_dir} workdir={workdir} datapool_root={datapool_root} dry_run={pipeline_env.get('DRY_RUN','0')}"
     )
+
+    if args.prepare_only:
+        print(f"[{time.strftime('%F %T')}] prepare-only: done (no steps executed)")
+        return 0
 
     for step in STEP_ORDER:
         run_step(
             root_dir=root_dir,
+            config_dir=config_dir,
             step=step,
             pipeline_env=pipeline_env,
             run_id=run_id,
