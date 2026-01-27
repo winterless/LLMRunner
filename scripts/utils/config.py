@@ -53,21 +53,42 @@ def resolve_config_vars(config: Dict[str, Any], context: Dict[str, str]) -> Dict
     """
     Resolve ${VAR} substitutions in config values using context.
     
+    Supports nested variable resolution (e.g., ${VAR1}/${VAR2}).
+    Resolves in multiple passes to handle dependencies.
+    
     Example:
         config = {"INPUT_DIR": "${DATAPOOL_ROOT}/data/raw"}
         context = {"DATAPOOL_ROOT": "/path/to/datapool"}
         result = {"INPUT_DIR": "/path/to/datapool/data/raw"}
     """
     resolved: Dict[str, str] = {}
+    # First pass: copy all values
     for key, value in config.items():
         if isinstance(value, str):
-            # Simple ${VAR} substitution
-            resolved_value = value
-            for var_name, var_value in context.items():
-                resolved_value = resolved_value.replace(f"${{{var_name}}}", var_value)
-            resolved[key] = resolved_value
+            resolved[key] = value
         else:
             resolved[key] = str(value)
+    
+    # Multiple passes for nested variable resolution
+    max_passes = 10
+    for _ in range(max_passes):
+        changed = False
+        for key, value in resolved.items():
+            if isinstance(value, str) and "${" in value:
+                new_value = value
+                for var_name, var_value in context.items():
+                    if f"${{{var_name}}}" in new_value:
+                        new_value = new_value.replace(f"${{{var_name}}}", var_value)
+                        changed = True
+                # Also resolve from already-resolved config values
+                for var_name, var_value in resolved.items():
+                    if var_name != key and f"${{{var_name}}}" in new_value:
+                        new_value = new_value.replace(f"${{{var_name}}}", var_value)
+                        changed = True
+                resolved[key] = new_value
+        if not changed:
+            break
+    
     return resolved
 
 

@@ -280,6 +280,10 @@ def run_step(
             "DATAPOOL_ROOT": datapool_root,
         }
     )
+    # Pass pipeline config variables to steps (for BASE_MODEL_PATH, etc.)
+    for key in ["BASE_MODEL_NAME", "BASE_MODEL_SRC", "BASE_MODEL_PATH"]:
+        if key in pipeline_env:
+            env[key] = pipeline_env[key]
     # Python scripts load config themselves, no need to update env
 
     # Clear output directory before running the step
@@ -311,7 +315,7 @@ def run_step(
 
 def main(argv: List[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python scripts/run.py")
-    ap.add_argument("-c", "--config", required=True, help="Path to pipeline.env")
+    ap.add_argument("-c", "--config", required=True, help="Path to pipeline.py or pipeline.env")
     ap.add_argument(
         "--prepare-only",
         action="store_true",
@@ -320,15 +324,46 @@ def main(argv: List[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     root_dir = Path(__file__).resolve().parent.parent
-    pipeline_env_path = Path(args.config).expanduser().resolve()
-    if not pipeline_env_path.exists():
-        raise SystemExit(f"Config not found: {pipeline_env_path}")
+    pipeline_config_path = Path(args.config).expanduser().resolve()
+    if not pipeline_config_path.exists():
+        raise SystemExit(f"Config not found: {pipeline_config_path}")
 
-    # Convention: a config root is the directory containing pipeline.env.
-    # It must contain steps/<step>.env alongside pipeline.env.
-    config_dir = pipeline_env_path.parent
+    # Convention: a config root is the directory containing pipeline.env or pipeline.py.
+    # It must contain steps/<step>.py alongside pipeline config.
+    config_dir = pipeline_config_path.parent
 
-    pipeline_env = parse_env_file(pipeline_env_path)
+    # Load pipeline config (.py preferred, .env for backward compatibility)
+    if pipeline_config_path.suffix == ".py":
+        # Load Python config
+        sys.path.insert(0, str(root_dir / "scripts" / "utils"))
+        from config import load_config_module, resolve_config_vars
+        pipeline_config = load_config_module(pipeline_config_path)
+        # First resolve DATAPOOL_ROOT to get the actual path
+        temp_context = {}
+        temp_resolved = resolve_config_vars(pipeline_config, temp_context)
+        datapool_root_temp = Path(temp_resolved.get("DATAPOOL_ROOT", str(root_dir / "datapool"))).expanduser().resolve()
+        # Now resolve all variables with full context
+        pipeline_context = {
+            "DATAPOOL_ROOT": str(datapool_root_temp),
+            "ROOT_DIR": str(root_dir),
+        }
+        pipeline_resolved = resolve_config_vars(pipeline_config, pipeline_context)
+        pipeline_env = {k: str(v) for k, v in pipeline_resolved.items()}
+    else:
+        # Load .env config (backward compatibility)
+        pipeline_env = parse_env_file(pipeline_config_path)
+        # Resolve variables in .env config (similar to .py config)
+        # First get DATAPOOL_ROOT to resolve other variables
+        datapool_root_temp = Path(pipeline_env.get("DATAPOOL_ROOT", str(root_dir / "datapool"))).expanduser().resolve()
+        # Resolve all variables with full context
+        pipeline_context = {
+            "DATAPOOL_ROOT": str(datapool_root_temp),
+            "ROOT_DIR": str(root_dir),
+        }
+        # Use resolve_config_vars for .env files too
+        sys.path.insert(0, str(root_dir / "scripts" / "utils"))
+        from config import resolve_config_vars
+        pipeline_env = resolve_config_vars(pipeline_env, pipeline_context)
 
     # 产出路径按实验唯一，不再用 RUN_ID 分层；run_id 仅用于日志目录（默认 "run"）
     run_id = pipeline_env.get("RUN_ID", "").strip() or "run"

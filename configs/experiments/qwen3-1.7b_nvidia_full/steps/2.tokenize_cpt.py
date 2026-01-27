@@ -2,7 +2,8 @@
 # Raw copy: CPT 源在下方，prepare_exp 会拷贝到 data/raw/cpt
 CPT_RAW_COPY_SRC = "/home/unlimitediw/workspace/TYDeepResearch/UDatasets/out/mixed/mymix/tmp"
 INPUT_DIR = "${DATAPOOL_ROOT}/data/raw/cpt"
-TOKENIZER_MODEL = "${DATAPOOL_ROOT}/model/base/Qwen3-4B/Qwen3-4B-Base"
+# TOKENIZER_MODEL: Use BASE_MODEL_PATH from pipeline.py (single source of truth)
+TOKENIZER_MODEL = "${BASE_MODEL_PATH}"
 # HuggingFaceTokenizer 通常不需要显式指定 vocab-file，tokenizer 会自动从 TOKENIZER_MODEL 路径找到 tokenizer.json
 # 如果遇到 tokenizer 加载问题，可以取消注释下面这行：
 # TOKENIZER_VOCAB_FILE = "${DATAPOOL_ROOT}/model/base/Qwen3-4B/Qwen3-4B-Base/tokenizer.json"

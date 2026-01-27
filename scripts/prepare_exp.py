@@ -212,13 +212,37 @@ def main(argv: List[str] | None = None) -> int:
 
     if not args.config:
         ap.error("-c/--config required when not using --copy-jsonl")
-    pipeline_env_path = Path(args.config).expanduser().resolve()
-    if not pipeline_env_path.exists():
-        raise SystemExit(f"Config not found: {pipeline_env_path}")
+    pipeline_config_path = Path(args.config).expanduser().resolve()
+    if not pipeline_config_path.exists():
+        raise SystemExit(f"Config not found: {pipeline_config_path}")
 
     root_dir = Path(__file__).resolve().parent.parent
-    config_dir = pipeline_env_path.parent
-    env = parse_env_file(pipeline_env_path)
+    config_dir = pipeline_config_path.parent
+    
+    # Load pipeline config (.py preferred, .env for backward compatibility)
+    if pipeline_config_path.suffix == ".py":
+        # Load Python config
+        utils_dir = root_dir / "scripts" / "utils"
+        if str(utils_dir) not in sys.path:
+            sys.path.insert(0, str(utils_dir))
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("config_utils", utils_dir / "config.py")
+        if spec is None or spec.loader is None:
+            raise SystemExit(f"Could not load config utils from {utils_dir / 'config.py'}")
+        config_utils = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(config_utils)
+        
+        pipeline_config = config_utils.load_config_module(pipeline_config_path)
+        # Resolve variables
+        pipeline_context = {
+            "DATAPOOL_ROOT": str(Path(pipeline_config.get("DATAPOOL_ROOT", "datapool")).expanduser().resolve()),
+            "ROOT_DIR": str(root_dir),
+        }
+        pipeline_resolved = config_utils.resolve_config_vars(pipeline_config, pipeline_context)
+        env = {k: str(v) for k, v in pipeline_resolved.items()}
+    else:
+        # Load .env config (backward compatibility)
+        env = parse_env_file(pipeline_config_path)
     dp = env.get("DATAPOOL_ROOT") or "datapool"
     datapool_root = Path(dp).expanduser()
     if not datapool_root.is_absolute():

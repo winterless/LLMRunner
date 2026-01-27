@@ -6,10 +6,16 @@
 
 ```bash
 # 1. 准备实验环境（创建 datapool 目录，拷贝 base 模型和原始数据）
-python3 scripts/prepare_exp.py -c configs/experiments/<实验名>/pipeline.env
+python3 scripts/prepare_exp.py -c configs/experiments/<实验名>/pipeline.py
 
 # 2. 运行流水线
-python3 scripts/run.py -c configs/experiments/<实验名>/pipeline.env
+python3 scripts/run.py -c configs/experiments/<实验名>/pipeline.py
+```
+
+或者使用便捷脚本：
+
+```bash
+./run.sh [config_path]
 ```
 
 ### 创建新实验
@@ -32,14 +38,30 @@ python3 scripts/prepare_exp.py --clone-experiment qwen3-4b_nvidia_full my_new_ex
 6. **convert**: 模型转换（Megatron → HuggingFace）
 7. **eval**: 模型评测
 
-通过 `pipeline.env` 中的 `STEP_*_ENABLED=1/0` 控制各步骤的启用。
+通过 `pipeline.py` 中的 `STEP_*_ENABLED = 1/0` 控制各步骤的启用。
 
 ## 配置系统
 
-- **流水线配置**: `configs/experiments/<实验名>/pipeline.env` - 控制步骤启用/禁用
+- **流水线配置**: `configs/experiments/<实验名>/pipeline.py` - Python 配置文件，控制步骤启用/禁用和模型路径
 - **步骤配置**: `configs/experiments/<实验名>/steps/<N>.<step>.py` - Python 配置文件
 
-配置支持变量替换（如 `${DATAPOOL_ROOT}`），详见 `scripts/utils/config.py`。
+### 模型路径配置
+
+模型路径配置统一在 `pipeline.py` 中管理（单一数据源）：
+
+```python
+# BASE_MODEL_SRC: 原始模型路径，应直接指向包含 safetensors 的目录
+BASE_MODEL_SRC = "/path/to/model/directory"
+
+# BASE_MODEL_NAME: 模型名称（用于 datapool 中的目录名）
+BASE_MODEL_NAME = "Qwen3-1.7B"
+
+# BASE_MODEL_PATH: 实际模型在 datapool 中的路径（自动派生）
+# prepare_exp 会将 BASE_MODEL_SRC 复制到 ${DATAPOOL_ROOT}/model/base/${BASE_MODEL_NAME}
+BASE_MODEL_PATH = "${DATAPOOL_ROOT}/model/base/${BASE_MODEL_NAME}"
+```
+
+配置支持变量替换（如 `${DATAPOOL_ROOT}`, `${BASE_MODEL_PATH}`），详见 `scripts/utils/config.py`。
 
 ## 数据目录结构
 
@@ -51,7 +73,7 @@ datapool/experiments/<实验名>/
 │   ├── raw/          # 原始数据（jsonl）
 │   │   ├── cpt/      # CPT 数据
 │   │   └── sft/      # SFT 数据
-│   ├── processed/    # UDatasets 处理后数据
+│   ├── processed/    # UDatasets 处理后数据（step1 udatasets 输出）
 │   └── tokenized/    # Tokenize 输出
 │       ├── cpt/      # CPT .bin/.idx
 │       └── sft/      # SFT .bin/.idx
@@ -69,6 +91,7 @@ datapool/experiments/<实验名>/
 - ✅ **Python 优先**: 所有步骤脚本和配置均为 Python，更易维护
 - ✅ **实验隔离**: 每个实验独立的 datapool，便于对照实验
 - ✅ **灵活配置**: 支持变量替换、条件启用步骤
+- ✅ **统一模型路径**: 模型路径配置集中在 `pipeline.py`，单一数据源
 
 ## 文档
 

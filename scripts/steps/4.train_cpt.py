@@ -32,9 +32,15 @@ def main() -> int:
     
     # Load and resolve config
     config = load_config_module(step_env_path)
+    datapool_root = Path(os.environ.get("DATAPOOL_ROOT", str(root_dir / "datapool")))
     context = {
         "ROOT_DIR": str(root_dir),
+        "DATAPOOL_ROOT": str(datapool_root),
     }
+    # Add pipeline config variables (BASE_MODEL_NAME, BASE_MODEL_SRC, BASE_MODEL_PATH)
+    for key in ["BASE_MODEL_NAME", "BASE_MODEL_SRC", "BASE_MODEL_PATH"]:
+        if key in os.environ:
+            context[key] = os.environ[key]
     config = resolve_config_vars(config, context)
     
     # Extract required config
@@ -60,6 +66,10 @@ def main() -> int:
             else:
                 print("train_cpt: RUN_WITH=cmd requires TRAIN_CMD in step config", file=sys.stderr)
                 return 2
+        # Replace variables in TRAIN_CMD using all config values
+        for key, value in config.items():
+            if isinstance(value, str):
+                train_cmd = train_cmd.replace(f"${{{key}}}", value)
     else:  # entrypoint
         entrypoint = require_config(config, "ENTRYPOINT", "train_cpt")
         args = config.get("ARGS", "")
