@@ -3,10 +3,11 @@
 SFT_RAW_COPY_SRC = "/home/unlimitediw/workspace/TYDeepResearch/UDatasets/out/mixed/mymix/sft"
 INPUT_DIR = "${DATAPOOL_ROOT}/data/raw/sft"
 OUTPUT_PREFIX = "${DATAPOOL_ROOT}/data/tokenized/sft/qwen3_4b_sft"
-TOKENIZER_MODEL = "${DATAPOOL_ROOT}/model/base/Qwen3-4B/Qwen3-4B-Base"
+# TOKENIZER_MODEL: Use BASE_MODEL_PATH from pipeline.py (single source of truth)
+TOKENIZER_MODEL = "${BASE_MODEL_PATH}"
 # HuggingFaceTokenizer 通常不需要显式指定 vocab-file，tokenizer 会自动从 TOKENIZER_MODEL 路径找到 tokenizer.json
 # 如果遇到 tokenizer 加载问题，可以尝试取消注释下面这行：
-# TOKENIZER_VOCAB_FILE = "${DATAPOOL_ROOT}/model/base/Qwen3-4B/Qwen3-4B-Base/tokenizer.json"
+# TOKENIZER_VOCAB_FILE = "${BASE_MODEL_PATH}/tokenizer.json"
 # SFT jsonl 字段常与 CPT 不同：无 "text" 时需设 JSON_KEYS（空格分隔，与 preprocess_data --json-keys 一致）
 # 例如 Alpaca 等: instruction input output ；若为单字段可设 JSON_KEYS="content" 等
 # 注意：PARTITIONS>1 时 Megatron 会为每个 key 生成 .idx；PARTITIONS=1 时只生成最后一个 key 的 .idx（Megatron bug）

@@ -84,15 +84,35 @@ def main() -> int:
             print(f"[dry-run] (cd {trainer_dir} && python {entrypoint} {args})")
         return 0
     
-    # Execute
+    # Execute with real-time output
     try:
         if run_with == "cmd":
-            subprocess.run(train_cmd, shell=True, cwd=trainer_dir, check=True)
+            # Use Popen to get real-time output (unbuffered)
+            proc = subprocess.Popen(
+                train_cmd,
+                shell=True,
+                cwd=trainer_dir,
+                stdout=sys.stdout,
+                stderr=sys.stderr,
+                bufsize=0,  # Unbuffered
+            )
+            return_code = proc.wait()
+            if return_code != 0:
+                raise subprocess.CalledProcessError(return_code, train_cmd)
         else:
-            cmd = ["python", entrypoint]
+            cmd = ["python", "-u", entrypoint]  # -u for unbuffered output
             if args:
                 cmd.extend(args.split())
-            subprocess.run(cmd, cwd=trainer_dir, check=True)
+            proc = subprocess.Popen(
+                cmd,
+                cwd=trainer_dir,
+                stdout=sys.stdout,
+                stderr=sys.stderr,
+                bufsize=0,  # Unbuffered
+            )
+            return_code = proc.wait()
+            if return_code != 0:
+                raise subprocess.CalledProcessError(return_code, cmd)
     except subprocess.CalledProcessError as e:
         print(f"train_cpt: failed with exit code {e.returncode}", file=sys.stderr)
         return e.returncode
