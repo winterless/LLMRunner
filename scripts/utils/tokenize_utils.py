@@ -6,8 +6,9 @@ from __future__ import annotations
 
 import json
 import shutil
+import sys
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 
 
 def merge_jsonl_files(input_files: List[Path], output_file: Path, required_keys: List[str] | None = None) -> int:
@@ -73,6 +74,108 @@ def merge_jsonl_files(input_files: List[Path], output_file: Path, required_keys:
     return total_lines
 
 
+def rewrite_sft_jsonl_to_input_label(
+    input_file: Path,
+    output_file: Path,
+    prompt_template: str,
+    input_template: str,
+    response_prefix: str,
+) -> Tuple[int, int]:
+    """
+    Rewrite SFT jsonl into input/label (+text) format.
+
+    Returns:
+        (written_lines, skipped_lines)
+    """
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    def to_text(value) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        if isinstance(value, (dict, list)):
+            return json.dumps(value, ensure_ascii=False)
+        return str(value)
+
+    def build_input_label(record: dict) -> Tuple[str, str] | None:
+        # Already in input/label format
+        if "input" in record and "label" in record:
+            return to_text(record.get("input")), to_text(record.get("label"))
+
+        # Instruction-style format
+        if "instruction" in record and "output" in record:
+            instruction = to_text(record.get("instruction")).strip()
+            extra_input = to_text(record.get("input")).strip()
+            prompt = prompt_template.format(instruction=instruction)
+            if extra_input:
+                prompt += input_template.format(input=extra_input)
+            prompt += response_prefix
+            return prompt, to_text(record.get("output"))
+
+        # Prompt/response format
+        if "prompt" in record and ("response" in record or "completion" in record):
+            response = record.get("response")
+            if response is None:
+                response = record.get("completion")
+            return to_text(record.get("prompt")), to_text(response)
+
+        # Fallback: single text as label
+        if "text" in record:
+            return "", to_text(record.get("text"))
+
+        return None
+
+    written = 0
+    skipped = 0
+    with open(input_file, "r", encoding="utf-8") as in_f, open(
+        output_file, "w", encoding="utf-8"
+    ) as out_f:
+        for line_num, line in enumerate(in_f, start=1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as exc:
+                print(
+                    f"rewrite_sft_jsonl_to_input_label: invalid JSON at {input_file}:{line_num}: {exc}",
+                    file=sys.stderr,
+                )
+                skipped += 1
+                continue
+            if not isinstance(record, dict):
+                print(
+                    f"rewrite_sft_jsonl_to_input_label: non-dict JSON at {input_file}:{line_num}",
+                    file=sys.stderr,
+                )
+                skipped += 1
+                continue
+            pair = build_input_label(record)
+            if not pair:
+                skipped += 1
+                continue
+            prompt, label = pair
+            if not label.strip():
+                skipped += 1
+                continue
+            text = f"{prompt}{label}"
+            out = {"input": prompt, "label": label, "text": text}
+            out_f.write(json.dumps(out, ensure_ascii=False) + "\n")
+            written += 1
+
+    if skipped:
+        print(
+            f"rewrite_sft_jsonl_to_input_label: wrote {written} lines, skipped {skipped} lines",
+            file=sys.stderr,
+        )
+
+    if written == 0:
+        raise ValueError(f"No valid lines written to {output_file}")
+
+    return written, skipped
+
+
 def expand_input_pattern(
     input_path: str,
     root_dir: Path,
@@ -133,7 +236,7 @@ def expand_input_pattern(
         jsonl_files = [path]
     
     if not jsonl_files:
-        raise FileNotFoundError(f"No files match pattern: {input_pattern}")
+        raise FileNotFoundError(f"No files match pattern: {input_path}")
     
     # If required_json_keys is specified, we need to filter/merge even for a single file
     # to ensure all lines have the required keys

@@ -54,6 +54,8 @@ TRAIN_CMD = """conda run -n LLMTrain torchrun --nproc_per_node=1 --master_port=2
   --save-interval 1000 \\
   --eval-interval 1000 \\
   --eval-iters 10 \\
+  --reset-attention-mask \\
+  --reset-position-ids \\
   --tensorboard-dir ${ROOT_DIR}/${SAVE_DIR}/tensorboard \\
   --ckpt-format torch \\
   --no-save-optim \\

@@ -12,7 +12,7 @@ from pathlib import Path
 # Add utils to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "utils"))
 from config import load_config_module, resolve_config_vars, require_config, require_path_exists
-from tokenize_utils import expand_input_pattern
+from tokenize_utils import expand_input_pattern, rewrite_sft_jsonl_to_input_label
 
 
 def resolve_path(path_str: str, root_dir: Path) -> Path:
@@ -65,6 +65,23 @@ def main() -> int:
     if not input_path:
         print("tokenize_sft: INPUT_DIR or SFT_INPUT_DIR is required", file=sys.stderr)
         return 2
+
+    # Optional: copy raw SFT data into datapool if source is configured
+    sft_raw_copy_src = config.get("SFT_RAW_COPY_SRC")
+    input_abs_path = resolve_path(input_path, root_dir)
+    if sft_raw_copy_src:
+        needs_copy = False
+        if not input_abs_path.exists():
+            needs_copy = True
+        elif input_abs_path.is_dir():
+            if not any(input_abs_path.glob("*.jsonl")):
+                needs_copy = True
+        if needs_copy:
+            print(f"tokenize_sft: copying raw SFT from {sft_raw_copy_src} -> {input_abs_path}")
+            if not dry_run:
+                sys.path.insert(0, str(root_dir / "scripts"))
+                from prepare_exp import copy_jsonl_flat
+                copy_jsonl_flat(Path(sft_raw_copy_src), input_abs_path)
     
     tokenizer_model = require_config(config, "TOKENIZER_MODEL", "tokenize_sft")
     output_prefix = config.get("OUTPUT_PREFIX") or config.get("SFT_OUTPUT_PREFIX")
@@ -81,6 +98,7 @@ def main() -> int:
     json_keys = config.get("JSON_KEYS") or config.get("SFT_JSON_KEYS", "instruction input output")
     tokenizer_type = config.get("TOKENIZER_TYPE", "HuggingFaceTokenizer")
     tokenizer_vocab_file = config.get("TOKENIZER_VOCAB_FILE")
+    conda_env = config.get("CONDA_ENV") or os.environ.get("CONDA_ENV")
     # MERGE_JSONL option is deprecated - we always merge now
     
     print("tokenize_sft: starting")
@@ -93,11 +111,16 @@ def main() -> int:
     # This ensures Megatron always receives a single file path
     merge_output = output_prefix_abs.parent / "merged_input.jsonl"
     
-    # Extract required keys from JSON_KEYS for filtering during merge
-    if isinstance(json_keys, str):
-        required_keys = json_keys.split()
+    # Extract required keys from JSON_KEYS for filtering during merge.
+    # If we are rewriting to input/label/text, allow mixed raw formats and skip filtering here.
+    rewrite_input_label = str(config.get("REWRITE_INPUT_LABEL", "0")) == "1"
+    if rewrite_input_label:
+        required_keys = None
     else:
-        required_keys = json_keys if isinstance(json_keys, list) else None
+        if isinstance(json_keys, str):
+            required_keys = json_keys.split()
+        else:
+            required_keys = json_keys if isinstance(json_keys, list) else None
     
     try:
         input_file_path = expand_input_pattern(
@@ -117,6 +140,27 @@ def main() -> int:
         else:
             print(f"tokenize_sft: Hint: Configure SFT_RAW_COPY_SRC in config and run 'prepare_exp' to copy data", file=sys.stderr)
         return 2
+
+    # Optional: rewrite raw SFT into input/label format
+    if rewrite_input_label:
+        prompt_template = config.get("PROMPT_TEMPLATE", "### Instruction:\n{instruction}\n")
+        input_template = config.get("PROMPT_INPUT_TEMPLATE", "### Input:\n{input}\n")
+        response_prefix = config.get("PROMPT_RESPONSE_PREFIX", "### Response:\n")
+        rewrite_output = config.get("REWRITE_OUTPUT_FILE")
+        if rewrite_output:
+            rewrite_output_abs = resolve_path(rewrite_output, root_dir)
+        else:
+            rewrite_output_abs = Path(input_abs).parent / "sft_input_label.jsonl"
+        print(f"tokenize_sft: rewriting input/label -> {rewrite_output_abs}")
+        if not dry_run:
+            rewrite_sft_jsonl_to_input_label(
+                Path(input_abs),
+                rewrite_output_abs,
+                prompt_template,
+                input_template,
+                response_prefix,
+            )
+        input_abs = str(rewrite_output_abs)
     
     # Validate paths are under datapool (unless allowed)
     if not allow_external_paths:
@@ -148,6 +192,8 @@ def main() -> int:
         str(output_prefix_abs),
         "--json-keys",
     ]
+    if conda_env:
+        cmd = ["conda", "run", "-n", conda_env] + cmd
     # JSON_KEYS can be space-separated string or list
     if isinstance(json_keys, str):
         cmd.extend(json_keys.split())
