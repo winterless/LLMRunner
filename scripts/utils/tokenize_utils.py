@@ -4,22 +4,31 @@ Utilities for tokenization steps, including JSONL merging.
 """
 from __future__ import annotations
 
-import json
+import random
 import shutil
 import sys
 from pathlib import Path
 from typing import List, Tuple
+import json
 
 
-def merge_jsonl_files(input_files: List[Path], output_file: Path, required_keys: List[str] | None = None) -> int:
+def merge_jsonl_files(
+    input_files: List[Path],
+    output_file: Path,
+    required_keys: List[str] | None = None,
+    *,
+    shuffle: bool = False,
+    shuffle_seed: int | None = None,
+    shuffle_buffer: int = 10000,
+) -> int:
     """
     Merge multiple JSONL files into a single JSONL file.
-    Validates JSON and optionally filters by required keys.
+    Does not validate JSON or filter keys.
     
     Args:
         input_files: List of input JSONL file paths
         output_file: Output JSONL file path
-        required_keys: Optional list of keys that must be present in each JSON object
+        required_keys: Ignored (kept for compatibility)
         
     Returns:
         Total number of lines written
@@ -28,10 +37,23 @@ def merge_jsonl_files(input_files: List[Path], output_file: Path, required_keys:
     
     total_lines = 0
     skipped_lines = 0
-    sys_module = __import__("sys")
     
+    rng = random.Random(shuffle_seed) if shuffle else None
+    buffer: List[str] = []
+
+    def flush_buffer(out_f) -> None:
+        if not buffer:
+            return
+        if rng is not None:
+            rng.shuffle(buffer)
+        out_f.write("".join(buffer))
+        buffer.clear()
+
+    ordered_files = sorted(input_files)
+    if rng is not None:
+        rng.shuffle(ordered_files)
     with open(output_file, "w", encoding="utf-8") as out_f:
-        for input_file in sorted(input_files):
+        for input_file in ordered_files:
             if not input_file.exists():
                 raise FileNotFoundError(f"Input file not found: {input_file}")
             
@@ -40,34 +62,16 @@ def merge_jsonl_files(input_files: List[Path], output_file: Path, required_keys:
                     line = line.strip()
                     if not line:  # Skip empty lines
                         continue
-                    
-                    # Validate JSON
-                    try:
-                        json_obj = json.loads(line)
-                        # Ensure it's a dict (not a list or other type)
-                        if not isinstance(json_obj, dict):
-                            print(f"Warning: Skipping non-dict JSON at {input_file}:{line_num}", file=sys_module.stderr)
-                            skipped_lines += 1
-                            continue
-                        
-                        # Check required keys if specified
-                        if required_keys:
-                            missing_keys = [key for key in required_keys if key not in json_obj]
-                            if missing_keys:
-                                print(f"Warning: Skipping line at {input_file}:{line_num} (missing keys: {missing_keys})", file=sys_module.stderr)
-                                skipped_lines += 1
-                                continue
-                        
+                    if rng is None:
                         out_f.write(line + "\n")
-                        total_lines += 1
-                    except json.JSONDecodeError as e:
-                        print(f"Warning: Invalid JSON at {input_file}:{line_num}: {e}, skipping", file=sys_module.stderr)
-                        skipped_lines += 1
-                        continue
-    
-    if skipped_lines > 0:
-        print(f"merge_jsonl_files: Merged {total_lines} lines, skipped {skipped_lines} invalid/mismatched lines", file=sys_module.stderr)
-    
+                    else:
+                        buffer.append(line + "\n")
+                        if len(buffer) >= shuffle_buffer:
+                            flush_buffer(out_f)
+                    total_lines += 1
+        if rng is not None:
+            flush_buffer(out_f)
+
     if total_lines == 0:
         raise ValueError(f"No valid lines found after merging {len(input_files)} files")
     
@@ -182,6 +186,10 @@ def expand_input_pattern(
     merge_files: bool = True,
     merge_output: Path | None = None,
     required_json_keys: List[str] | None = None,
+    *,
+    shuffle: bool = False,
+    shuffle_seed: int | None = None,
+    shuffle_buffer: int = 10000,
 ) -> Path:
     """
     Expand input path (directory or single file) and merge into a single file.
@@ -238,25 +246,26 @@ def expand_input_pattern(
     if not jsonl_files:
         raise FileNotFoundError(f"No files match pattern: {input_path}")
     
-    # If required_json_keys is specified, we need to filter/merge even for a single file
-    # to ensure all lines have the required keys
-    if required_json_keys is not None or len(jsonl_files) > 1:
-        # Need to merge/filter
-        if merge_files:
-            if merge_output is None:
-                # Default: merge to first file's directory with "merged.jsonl" name
-                merge_output = jsonl_files[0].parent / "merged.jsonl"
-            merge_jsonl_files(jsonl_files, merge_output, required_keys=required_json_keys)
-            return merge_output
-        else:
-            # If merge_files=False but required_keys specified, still need to filter
-            if required_json_keys is not None:
-                if merge_output is None:
-                    merge_output = jsonl_files[0].parent / "merged.jsonl"
-                merge_jsonl_files(jsonl_files, merge_output, required_keys=required_json_keys)
-                return merge_output
-            # If merge_files=False and no required_keys, return first file
-            return jsonl_files[0]
+    # Merge when multiple files are present (or if caller explicitly wants merge)
+    if len(jsonl_files) > 1 or required_json_keys is not None:
+        # Need to merge
+        if not merge_files:
+            raise ValueError(
+                "MERGE_JSONL=0 is incompatible with multiple JSONL files. "
+                "Please enable MERGE_JSONL or provide a single .jsonl file."
+            )
+        if merge_output is None:
+            # Default: merge to first file's directory with "merged.jsonl" name
+            merge_output = jsonl_files[0].parent / "merged.jsonl"
+        merge_jsonl_files(
+            jsonl_files,
+            merge_output,
+            required_keys=None,
+            shuffle=shuffle,
+            shuffle_seed=shuffle_seed,
+            shuffle_buffer=shuffle_buffer,
+        )
+        return merge_output
     else:
         # Single file, no required keys, no merge needed: return it directly
         return jsonl_files[0]

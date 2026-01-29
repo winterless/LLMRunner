@@ -1,18 +1,17 @@
 # step5: NVIDIA checkpoint → HF. RUN_WITH=cmd → run CONVERT_CMD (set in this file). RUN_WITH=entrypoint → python ENTRYPOINT ARGS.
 RUN_WITH = "cmd"
-TRAINER_DIR = "/home/unlimitediw/workspace/Megatron-LM"
-MEGATRON_DIR = "/home/unlimitediw/workspace/Megatron-LM"
+MEGATRON = "${MEGATRON}"
 CONDA_ENV = "LLMTrain"
 IN_CKPT_DIR = "${DATAPOOL_ROOT}/model/sft_checkpoints"
 OUT_HF_DIR = "${DATAPOOL_ROOT}/model/hf"
 # Converter: Megatron-LM tools/checkpoint (Megatron -> HF, no TE)
-CONVERT_CMD = """PYTHONPATH=${ROOT_DIR}/scripts:${MEGATRON_DIR}/tools/checkpoint:${MEGATRON_DIR}:$PYTHONPATH python ${MEGATRON_DIR}/tools/checkpoint/convert.py \
+CONVERT_CMD = """PYTHONPATH=${ROOT_DIR}/scripts:${MEGATRON}/tools/checkpoint:${MEGATRON}:$PYTHONPATH python ${MEGATRON}/tools/checkpoint/convert.py \
   --model-type GPT \
   --loader legacy_nf \
   --saver hf_qwen3 \
   --load-dir ${IN_CKPT_DIR} \
   --save-dir ${OUT_HF_DIR} \
-  --megatron-path ${MEGATRON_DIR} \
+  --megatron-path ${MEGATRON} \
   --loader-transformer-impl local"""
 # Copy tokenizer/config before conversion (HF output expects these)
 COPY_HF_BEFORE = 1

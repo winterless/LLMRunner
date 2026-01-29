@@ -9,48 +9,23 @@ import time
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
+ROOT_DIR = Path(__file__).resolve().parent.parent
+UTILS_DIR = ROOT_DIR / "scripts" / "utils"
 
-def parse_env_file(path: Path) -> Dict[str, str]:
-    """
-    Minimal .env parser (stdlib only).
-    Supports:
-      KEY=value
-      KEY="value"
-      KEY='value'
-    Ignores blank lines and lines starting with #.
-    """
-    env: Dict[str, str] = {}
-    if not path.exists():
-        return env
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        # Strip inline comments: everything after an unquoted '#'
-        in_quote: str | None = None
-        cleaned: List[str] = []
-        for ch in line:
-            if in_quote is None and ch in ("'", '"'):
-                in_quote = ch
-                cleaned.append(ch)
-                continue
-            if in_quote is not None and ch == in_quote:
-                in_quote = None
-                cleaned.append(ch)
-                continue
-            if in_quote is None and ch == "#":
-                break
-            cleaned.append(ch)
-        line = "".join(cleaned).strip()
-        if not line or "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        k = k.strip()
-        v = v.strip()
-        if (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
-            v = v[1:-1]
-        env[k] = v
-    return env
+# Load config utils without importing pipeline config modules.
+import importlib.util
+
+_spec = importlib.util.spec_from_file_location("config_utils", UTILS_DIR / "config.py")
+if _spec is None or _spec.loader is None:
+    raise SystemExit(f"Could not load config utils from {UTILS_DIR / 'config.py'}")
+config_utils = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(config_utils)
+
+_tu_spec = importlib.util.spec_from_file_location("tokenize_utils", UTILS_DIR / "tokenize_utils.py")
+if _tu_spec is None or _tu_spec.loader is None:
+    raise SystemExit(f"Could not load tokenize utils from {UTILS_DIR / 'tokenize_utils.py'}")
+tokenize_utils = importlib.util.module_from_spec(_tu_spec)
+_tu_spec.loader.exec_module(tokenize_utils)
 
 
 def ensure_datapool_structure(datapool_root: Path) -> None:
@@ -66,6 +41,184 @@ def ensure_datapool_structure(datapool_root: Path) -> None:
     ]:
         p.mkdir(parents=True, exist_ok=True)
     return None
+
+
+def _resolve_path(path_str: str, root_dir: Path) -> Path:
+    path = Path(path_str).expanduser()
+    if path.is_absolute():
+        return path.resolve()
+    return (root_dir / path).resolve()
+
+
+def _load_step_config(path: Path, *, root_dir: Path, datapool_root: Path) -> Dict[str, str]:
+    if not path.exists():
+        return {}
+    if path.suffix != ".py":
+        raise SystemExit("Only .py pipeline configs are supported")
+    config = config_utils.load_config_module(path)
+    config_utils.merge_env_defaults(config, os.environ)
+    context = {
+        "DATAPOOL_ROOT": str(datapool_root),
+        "ROOT_DIR": str(root_dir),
+    }
+    config_utils.apply_env_imports(context, os.environ)
+    return config_utils.resolve_config_vars(config, context)
+
+
+def prepare_from_env(
+    *,
+    pipeline_env: Dict[str, str],
+    config_dir: Path,
+    root_dir: Path,
+    mode: str = "copy",
+) -> None:
+    dp = pipeline_env.get("DATAPOOL_ROOT") or "datapool"
+    datapool_root = _resolve_path(dp, root_dir)
+    # Prepare (copy raw, merge jsonl) always runs; DRY_RUN only affects steps in run.py
+
+    ensure_datapool_structure(datapool_root)
+    print(f"[{time.strftime('%F %T')}] config_dir={config_dir}")
+    print(f"[{time.strftime('%F %T')}] datapool_root={datapool_root}")
+
+    # Copy/link base model
+    base_model_src = pipeline_env.get("BASE_MODEL_SRC", "").strip()
+    base_model_name = pipeline_env.get("BASE_MODEL_NAME", "base_model").strip() or "base_model"
+    if base_model_src:
+        src = _resolve_path(base_model_src, root_dir)
+        dst = datapool_root / "model" / "base" / base_model_name
+        print(f"[{time.strftime('%F %T')}] base_model: {src} -> {dst} (mode={mode})")
+        if not src.exists():
+            raise SystemExit(f"BASE_MODEL_SRC not found: {src}")
+        if dst.exists():
+            print(f"[{time.strftime('%F %T')}] base_model: exists, skip -> {dst}")
+        elif mode == "copy":
+            shutil.copytree(src, dst)
+        else:
+            copytree_link_fallback(src, dst)
+    else:
+        print(f"[{time.strftime('%F %T')}] base_model: skipped (BASE_MODEL_SRC not set)")
+
+    # Optional: copy CPT/SFT raw data from tokenize configs
+    steps_dir = config_dir / "steps"
+    cpt_config_path = steps_dir / "2.tokenize_cpt.py"
+    if not cpt_config_path.exists():
+        cpt_config_path = steps_dir / "tokenize_cpt.py"
+
+    sft_config_path = steps_dir / "3.tokenize_sft.py"
+    if not sft_config_path.exists():
+        sft_config_path = steps_dir / "2.tokenize_sft.py"
+        if not sft_config_path.exists():
+            sft_config_path = steps_dir / "tokenize_sft.py"
+
+    # Copy CPT raw data
+    if cpt_config_path.exists():
+        cpt_config = _load_step_config(cpt_config_path, root_dir=root_dir, datapool_root=datapool_root)
+        copy_src = cpt_config.get("CPT_RAW_COPY_SRC", "").strip()
+        if copy_src:
+            src_dir = _resolve_path(copy_src, root_dir)
+            if not src_dir.exists():
+                raise SystemExit(f"CPT_RAW_COPY_SRC not found: {src_dir}")
+            dst_dir = datapool_root / "data" / "raw" / "cpt"
+            print(f"[{time.strftime('%F %T')}] CPT_RAW_COPY_SRC: {src_dir} -> {dst_dir} (mode={mode})")
+            copied, clashes = copy_jsonl_flat(src_dir, dst_dir)
+            print(f"[{time.strftime('%F %T')}] CPT_RAW_COPY_SRC: copied_jsonl={copied} clashes={len(clashes)}")
+            if clashes:
+                for x in clashes[:20]:
+                    print(f"  [warn] skip (exists): {x}", file=sys.stderr)
+                if len(clashes) > 20:
+                    print(f"  ... and {len(clashes) - 20} more", file=sys.stderr)
+        else:
+            print(f"[{time.strftime('%F %T')}] CPT_RAW_COPY_SRC: skipped (not set in {cpt_config_path.name})")
+    else:
+        print(f"[{time.strftime('%F %T')}] CPT_RAW_COPY_SRC: skipped (config not found)")
+
+    # Optional: merge + shuffle CPT jsonl
+    if cpt_config_path.exists():
+        merge_jsonl = str(cpt_config.get("MERGE_JSONL", "1")) == "1"
+        if merge_jsonl:
+            input_path = cpt_config.get("INPUT_DIR", "").strip()
+            output_prefix = cpt_config.get("OUTPUT_PREFIX", "").strip()
+            json_keys = cpt_config.get("JSON_KEYS", "text")
+            shuffle_jsonl = str(cpt_config.get("SHUFFLE_JSONL", "0")) == "1"
+            shuffle_seed = cpt_config.get("SHUFFLE_SEED")
+            shuffle_buffer = int(cpt_config.get("SHUFFLE_BUFFER", "10000"))
+            if input_path and output_prefix:
+                input_abs = _resolve_path(input_path, root_dir)
+                # Write merged input under raw/cpt so it is not cleared when tokenized/cpt is cleared
+                merge_output = (input_abs / "merged_input.jsonl") if input_abs.is_dir() else (input_abs.parent / "merged_input.jsonl")
+                if isinstance(json_keys, str):
+                    required_keys = json_keys.split()
+                else:
+                    required_keys = json_keys if isinstance(json_keys, list) else None
+                tokenize_utils.expand_input_pattern(
+                    input_path,
+                    root_dir,
+                    merge_files=True,
+                    merge_output=merge_output,
+                    required_json_keys=required_keys,
+                    shuffle=shuffle_jsonl,
+                    shuffle_seed=int(shuffle_seed) if shuffle_seed else None,
+                    shuffle_buffer=shuffle_buffer,
+                )
+                print(f"[{time.strftime('%F %T')}] CPT merge_jsonl: output={merge_output} shuffle={shuffle_jsonl}")
+            else:
+                print(f"[{time.strftime('%F %T')}] CPT merge_jsonl: skipped (missing INPUT_DIR/OUTPUT_PREFIX)")
+
+    # Copy SFT raw data
+    if sft_config_path.exists():
+        sft_config = _load_step_config(sft_config_path, root_dir=root_dir, datapool_root=datapool_root)
+        copy_src = sft_config.get("SFT_RAW_COPY_SRC", "").strip()
+        if copy_src:
+            src_dir = _resolve_path(copy_src, root_dir)
+            if not src_dir.exists():
+                raise SystemExit(f"SFT_RAW_COPY_SRC not found: {src_dir}")
+            dst_dir = datapool_root / "data" / "raw" / "sft"
+            print(f"[{time.strftime('%F %T')}] SFT_RAW_COPY_SRC: {src_dir} -> {dst_dir} (mode={mode})")
+            copied, clashes = copy_jsonl_flat(src_dir, dst_dir)
+            print(f"[{time.strftime('%F %T')}] SFT_RAW_COPY_SRC: copied_jsonl={copied} clashes={len(clashes)}")
+            if clashes:
+                for x in clashes[:20]:
+                    print(f"  [warn] skip (exists): {x}", file=sys.stderr)
+                if len(clashes) > 20:
+                    print(f"  ... and {len(clashes) - 20} more", file=sys.stderr)
+        else:
+            print(f"[{time.strftime('%F %T')}] SFT_RAW_COPY_SRC: skipped (not set in {sft_config_path.name})")
+    else:
+        print(f"[{time.strftime('%F %T')}] SFT_RAW_COPY_SRC: skipped (config not found)")
+
+    # Optional: merge + shuffle SFT jsonl
+    if sft_config_path.exists():
+        merge_jsonl = str(sft_config.get("MERGE_JSONL", "1")) == "1"
+        if merge_jsonl:
+            input_path = sft_config.get("INPUT_DIR") or sft_config.get("SFT_INPUT_DIR", "")
+            output_prefix = sft_config.get("OUTPUT_PREFIX") or sft_config.get("SFT_OUTPUT_PREFIX", "")
+            json_keys = sft_config.get("JSON_KEYS") or sft_config.get("SFT_JSON_KEYS", "instruction input output")
+            shuffle_jsonl = str(sft_config.get("SHUFFLE_JSONL", "0")) == "1"
+            shuffle_seed = sft_config.get("SHUFFLE_SEED")
+            shuffle_buffer = int(sft_config.get("SHUFFLE_BUFFER", "10000"))
+            if input_path and output_prefix:
+                input_abs = _resolve_path(input_path, root_dir)
+                # Write merged input under raw/sft so it is not cleared when tokenized/sft is cleared
+                merge_output = (input_abs / "merged_input.jsonl") if input_abs.is_dir() else (input_abs.parent / "merged_input.jsonl")
+                if isinstance(json_keys, str):
+                    required_keys = json_keys.split()
+                else:
+                    required_keys = json_keys if isinstance(json_keys, list) else None
+                tokenize_utils.expand_input_pattern(
+                    input_path,
+                    root_dir,
+                    merge_files=True,
+                    merge_output=merge_output,
+                    required_json_keys=required_keys,
+                    shuffle=shuffle_jsonl,
+                    shuffle_seed=int(shuffle_seed) if shuffle_seed else None,
+                    shuffle_buffer=shuffle_buffer,
+                )
+                print(f"[{time.strftime('%F %T')}] SFT merge_jsonl: output={merge_output} shuffle={shuffle_jsonl}")
+            else:
+                print(f"[{time.strftime('%F %T')}] SFT merge_jsonl: skipped (missing INPUT_DIR/OUTPUT_PREFIX)")
+
+    print(f"[{time.strftime('%F %T')}] prepare_exp done")
 
 
 def _copy_or_link_file(src: str, dst: str) -> None:
@@ -216,159 +369,33 @@ def main(argv: List[str] | None = None) -> int:
     if not pipeline_config_path.exists():
         raise SystemExit(f"Config not found: {pipeline_config_path}")
 
-    root_dir = Path(__file__).resolve().parent.parent
+    root_dir = ROOT_DIR
     config_dir = pipeline_config_path.parent
+    if not os.environ.get("DATAPOOL"):
+        os.environ["DATAPOOL"] = str(root_dir / "datapool")
     
-    # Load pipeline config (.py preferred, .env for backward compatibility)
-    if pipeline_config_path.suffix == ".py":
-        # Load Python config
-        utils_dir = root_dir / "scripts" / "utils"
-        if str(utils_dir) not in sys.path:
-            sys.path.insert(0, str(utils_dir))
-        import importlib.util
-        spec = importlib.util.spec_from_file_location("config_utils", utils_dir / "config.py")
-        if spec is None or spec.loader is None:
-            raise SystemExit(f"Could not load config utils from {utils_dir / 'config.py'}")
-        config_utils = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(config_utils)
-        
-        pipeline_config = config_utils.load_config_module(pipeline_config_path)
-        # Resolve variables
-        pipeline_context = {
-            "DATAPOOL_ROOT": str(Path(pipeline_config.get("DATAPOOL_ROOT", "datapool")).expanduser().resolve()),
-            "ROOT_DIR": str(root_dir),
-        }
-        pipeline_resolved = config_utils.resolve_config_vars(pipeline_config, pipeline_context)
-        env = {k: str(v) for k, v in pipeline_resolved.items()}
-    else:
-        # Load .env config (backward compatibility)
-        env = parse_env_file(pipeline_config_path)
-    dp = env.get("DATAPOOL_ROOT") or "datapool"
-    datapool_root = Path(dp).expanduser()
-    if not datapool_root.is_absolute():
-        datapool_root = (root_dir / datapool_root).resolve()
-    else:
-        datapool_root = datapool_root.resolve()
-
-    ensure_datapool_structure(datapool_root)
-    print(f"[{time.strftime('%F %T')}] config_dir={config_dir}")
-    print(f"[{time.strftime('%F %T')}] datapool_root={datapool_root}")
-
-    # Copy/link base model
-    base_model_src = env.get("BASE_MODEL_SRC", "").strip()
-    base_model_name = env.get("BASE_MODEL_NAME", "base_model").strip() or "base_model"
-    if base_model_src:
-        src = Path(base_model_src).expanduser().resolve()
-        dst = datapool_root / "model" / "base" / base_model_name
-        print(f"[{time.strftime('%F %T')}] base_model: {src} -> {dst} (mode={args.mode})")
-        if not src.exists():
-            raise SystemExit(f"BASE_MODEL_SRC not found: {src}")
-        if dst.exists():
-            print(f"[{time.strftime('%F %T')}] base_model: exists, skip -> {dst}")
-        elif args.mode == "copy":
-            shutil.copytree(src, dst)
-        else:
-            copytree_link_fallback(src, dst)
-    else:
-        print(f"[{time.strftime('%F %T')}] base_model: skipped (BASE_MODEL_SRC not set)")
-
-    # Optional: copy CPT/SFT raw data from tokenize configs
-    steps_dir = config_dir / "steps"
-    # Try Python configs first (.py), then fallback to .env for backward compatibility
-    cpt_config_path = steps_dir / "2.tokenize_cpt.py"
-    if not cpt_config_path.exists():
-        cpt_config_path = steps_dir / "tokenize_cpt.py"
-    if not cpt_config_path.exists():
-        # Fallback to .env
-        cpt_config_path = steps_dir / "2.tokenize_cpt.env"
-        if not cpt_config_path.exists():
-            cpt_config_path = steps_dir / "tokenize_cpt.env"
-    
-    sft_config_path = steps_dir / "3.tokenize_sft.py"
-    if not sft_config_path.exists():
-        sft_config_path = steps_dir / "2.tokenize_sft.py"
-        if not sft_config_path.exists():
-            sft_config_path = steps_dir / "tokenize_sft.py"
-    if not sft_config_path.exists():
-        # Fallback to .env
-        sft_config_path = steps_dir / "3.tokenize_sft.env"
-        if not sft_config_path.exists():
-            sft_config_path = steps_dir / "2.tokenize_sft.env"
-            if not sft_config_path.exists():
-                sft_config_path = steps_dir / "tokenize_sft.env"
-    
-    # Load config helper
-    def load_config(path: Path) -> Dict[str, str]:
-        if not path.exists():
-            return {}
-        if path.suffix == ".py":
-            # Load Python config
-            # Import from utils module to avoid conflicts with config files
-            utils_dir = root_dir / "scripts" / "utils"
-            if str(utils_dir) not in sys.path:
-                sys.path.insert(0, str(utils_dir))
-            import importlib.util
-            spec = importlib.util.spec_from_file_location("config_utils", utils_dir / "config.py")
-            if spec is None or spec.loader is None:
-                raise SystemExit(f"Could not load config utils from {utils_dir / 'config.py'}")
-            config_utils = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(config_utils)
-            
-            py_config = config_utils.load_config_module(path)
-            context = {
-                "DATAPOOL_ROOT": str(datapool_root),
-                "ROOT_DIR": str(root_dir),
-            }
-            return config_utils.resolve_config_vars(py_config, context)
-        else:
-            # Load .env config (backward compatibility)
-            return parse_env_file(path)
-    
-    # Copy CPT raw data
-    if cpt_config_path.exists():
-        cpt_config = load_config(cpt_config_path)
-        copy_src = cpt_config.get("CPT_RAW_COPY_SRC", "").strip()
-        if copy_src:
-            src_dir = Path(copy_src).expanduser().resolve()
-            if not src_dir.exists():
-                raise SystemExit(f"CPT_RAW_COPY_SRC not found: {src_dir}")
-            dst_dir = datapool_root / "data/raw/cpt"
-            print(f"[{time.strftime('%F %T')}] CPT_RAW_COPY_SRC: {src_dir} -> {dst_dir} (mode={args.mode})")
-            copied, clashes = copy_jsonl_flat(src_dir, dst_dir)
-            print(f"[{time.strftime('%F %T')}] CPT_RAW_COPY_SRC: copied_jsonl={copied} clashes={len(clashes)}")
-            if clashes:
-                for x in clashes[:20]:
-                    print(f"  [warn] skip (exists): {x}", file=sys.stderr)
-                if len(clashes) > 20:
-                    print(f"  ... and {len(clashes) - 20} more", file=sys.stderr)
-        else:
-            print(f"[{time.strftime('%F %T')}] CPT_RAW_COPY_SRC: skipped (not set in {cpt_config_path.name})")
-    else:
-        print(f"[{time.strftime('%F %T')}] CPT_RAW_COPY_SRC: skipped (config not found)")
-    
-    # Copy SFT raw data
-    if sft_config_path.exists():
-        sft_config = load_config(sft_config_path)
-        copy_src = sft_config.get("SFT_RAW_COPY_SRC", "").strip()
-        if copy_src:
-            src_dir = Path(copy_src).expanduser().resolve()
-            if not src_dir.exists():
-                raise SystemExit(f"SFT_RAW_COPY_SRC not found: {src_dir}")
-            dst_dir = datapool_root / "data/raw/sft"
-            print(f"[{time.strftime('%F %T')}] SFT_RAW_COPY_SRC: {src_dir} -> {dst_dir} (mode={args.mode})")
-            copied, clashes = copy_jsonl_flat(src_dir, dst_dir)
-            print(f"[{time.strftime('%F %T')}] SFT_RAW_COPY_SRC: copied_jsonl={copied} clashes={len(clashes)}")
-            if clashes:
-                for x in clashes[:20]:
-                    print(f"  [warn] skip (exists): {x}", file=sys.stderr)
-                if len(clashes) > 20:
-                    print(f"  ... and {len(clashes) - 20} more", file=sys.stderr)
-        else:
-            print(f"[{time.strftime('%F %T')}] SFT_RAW_COPY_SRC: skipped (not set in {sft_config_path.name})")
-    else:
-        print(f"[{time.strftime('%F %T')}] SFT_RAW_COPY_SRC: skipped (config not found)")
-
-    print(f"[{time.strftime('%F %T')}] prepare_exp done")
+    # Load pipeline config (.py only)
+    if pipeline_config_path.suffix != ".py":
+        raise SystemExit("Only .py pipeline configs are supported")
+    pipeline_config = config_utils.load_config_module(pipeline_config_path)
+    config_utils.merge_env_defaults(pipeline_config, os.environ)
+    # Resolve variables
+    temp_context: Dict[str, str] = {}
+    config_utils.apply_env_imports(temp_context, os.environ)
+    temp_resolved = config_utils.resolve_config_vars(pipeline_config, temp_context)
+    pipeline_context = {
+        "DATAPOOL_ROOT": str(Path(temp_resolved.get("DATAPOOL_ROOT", "datapool")).expanduser().resolve()),
+        "ROOT_DIR": str(root_dir),
+    }
+    config_utils.apply_env_imports(pipeline_context, os.environ)
+    pipeline_resolved = config_utils.resolve_config_vars(pipeline_config, pipeline_context)
+    env = {k: str(v) for k, v in pipeline_resolved.items()}
+    prepare_from_env(
+        pipeline_env=env,
+        config_dir=config_dir,
+        root_dir=root_dir,
+        mode=args.mode,
+    )
     return 0
 
 

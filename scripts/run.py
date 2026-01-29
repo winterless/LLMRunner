@@ -15,52 +15,6 @@ STEP_ORDER: List[str] = ["udatasets", "tokenize_cpt", "tokenize_sft", "train_cpt
 STEP_NUM: Dict[str, int] = {step: i + 1 for i, step in enumerate(STEP_ORDER)}
 
 
-def parse_env_file(path: Path) -> Dict[str, str]:
-    """
-    Minimal .env parser (stdlib only).
-    Supports:
-      KEY=value
-      KEY="value"
-      KEY='value'
-    Ignores blank lines and lines starting with #.
-    """
-    env: Dict[str, str] = {}
-    if not path.exists():
-        return env
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        # Strip inline comments: everything after an unquoted '#'
-        # (common .env style: KEY=value  # comment)
-        in_quote: str | None = None
-        cleaned_chars: List[str] = []
-        for ch in line:
-            if in_quote is None and ch in ("'", '"'):
-                in_quote = ch
-                cleaned_chars.append(ch)
-                continue
-            if in_quote is not None and ch == in_quote:
-                in_quote = None
-                cleaned_chars.append(ch)
-                continue
-            if in_quote is None and ch == "#":
-                break
-            cleaned_chars.append(ch)
-        line = "".join(cleaned_chars).strip()
-        if not line:
-            continue
-        if "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        k = k.strip()
-        v = v.strip()
-        if (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
-            v = v[1:-1]
-        env[k] = v
-    return env
-
-
 def now_run_id() -> str:
     return time.strftime("%Y%m%d-%H%M%S")
 
@@ -284,7 +238,7 @@ def run_step(
         }
     )
     # Pass pipeline config variables to steps (for BASE_MODEL_PATH, etc.)
-    for key in ["BASE_MODEL_NAME", "BASE_MODEL_SRC", "BASE_MODEL_PATH", "MODEL_PREFIX"]:
+    for key in ["BASE_MODEL_NAME", "BASE_MODEL_SRC", "BASE_MODEL_PATH", "MODEL_PREFIX", "MEGATRON", "MINDSPEED", "ROOT"]:
         if key in pipeline_env:
             env[key] = pipeline_env[key]
     # Python scripts load config themselves, no need to update env
@@ -327,6 +281,8 @@ def main(argv: List[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     root_dir = Path(__file__).resolve().parent.parent
+    if not os.environ.get("DATAPOOL"):
+        os.environ["DATAPOOL"] = str(root_dir / "datapool")
     pipeline_config_path = Path(args.config).expanduser().resolve()
     if not pipeline_config_path.exists():
         raise SystemExit(f"Config not found: {pipeline_config_path}")
@@ -335,38 +291,35 @@ def main(argv: List[str] | None = None) -> int:
     # It must contain steps/<step>.py alongside pipeline config.
     config_dir = pipeline_config_path.parent
 
-    # Load pipeline config (.py preferred, .env for backward compatibility)
-    if pipeline_config_path.suffix == ".py":
-        # Load Python config
-        sys.path.insert(0, str(root_dir / "scripts" / "utils"))
-        from config import load_config_module, resolve_config_vars
-        pipeline_config = load_config_module(pipeline_config_path)
-        # First resolve DATAPOOL_ROOT to get the actual path
-        temp_context = {}
-        temp_resolved = resolve_config_vars(pipeline_config, temp_context)
-        datapool_root_temp = Path(temp_resolved.get("DATAPOOL_ROOT", str(root_dir / "datapool"))).expanduser().resolve()
-        # Now resolve all variables with full context
-        pipeline_context = {
-            "DATAPOOL_ROOT": str(datapool_root_temp),
-            "ROOT_DIR": str(root_dir),
-        }
-        pipeline_resolved = resolve_config_vars(pipeline_config, pipeline_context)
-        pipeline_env = {k: str(v) for k, v in pipeline_resolved.items()}
-    else:
-        # Load .env config (backward compatibility)
-        pipeline_env = parse_env_file(pipeline_config_path)
-        # Resolve variables in .env config (similar to .py config)
-        # First get DATAPOOL_ROOT to resolve other variables
-        datapool_root_temp = Path(pipeline_env.get("DATAPOOL_ROOT", str(root_dir / "datapool"))).expanduser().resolve()
-        # Resolve all variables with full context
-        pipeline_context = {
-            "DATAPOOL_ROOT": str(datapool_root_temp),
-            "ROOT_DIR": str(root_dir),
-        }
-        # Use resolve_config_vars for .env files too
-        sys.path.insert(0, str(root_dir / "scripts" / "utils"))
-        from config import resolve_config_vars
-        pipeline_env = resolve_config_vars(pipeline_env, pipeline_context)
+    # Load pipeline config (.py only)
+    if pipeline_config_path.suffix != ".py":
+        raise SystemExit("Only .py pipeline configs are supported")
+    sys.path.insert(0, str(root_dir / "scripts" / "utils"))
+    from config import apply_env_imports, load_config_module, merge_env_defaults, resolve_config_vars
+    pipeline_config = load_config_module(pipeline_config_path)
+    merge_env_defaults(pipeline_config, os.environ)
+    # First resolve DATAPOOL_ROOT to get the actual path
+    temp_context = {}
+    apply_env_imports(temp_context, os.environ)
+    temp_resolved = resolve_config_vars(pipeline_config, temp_context)
+    datapool_root_temp = Path(temp_resolved.get("DATAPOOL_ROOT", str(root_dir / "datapool"))).expanduser().resolve()
+    # Now resolve all variables with full context
+    pipeline_context = {
+        "DATAPOOL_ROOT": str(datapool_root_temp),
+        "ROOT_DIR": str(root_dir),
+    }
+    apply_env_imports(pipeline_context, os.environ)
+    pipeline_resolved = resolve_config_vars(pipeline_config, pipeline_context)
+    pipeline_env = {k: str(v) for k, v in pipeline_resolved.items()}
+
+    # Prepare experiment (datapool structure, base model, raw data)
+    import prepare_exp
+    prepare_exp.prepare_from_env(
+        pipeline_env=pipeline_env,
+        config_dir=config_dir,
+        root_dir=root_dir,
+        mode="copy",
+    )
 
     # 产出路径按实验唯一，不再用 RUN_ID 分层；run_id 仅用于日志目录（默认 "run"）
     run_id = pipeline_env.get("RUN_ID", "").strip() or "run"
@@ -376,17 +329,6 @@ def main(argv: List[str] | None = None) -> int:
 
     workdir.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
-    # Ensure datapool structure exists (single source of truth for data/artifacts)
-    for p in [
-        datapool_root / "data" / "raw",
-        datapool_root / "data" / "processed",
-        datapool_root / "data" / "tokenized",
-        datapool_root / "model" / "cpt_checkpoints",
-        datapool_root / "model" / "sft_checkpoints",
-        datapool_root / "model" / "hf",
-        datapool_root / "reports",
-    ]:
-        p.mkdir(parents=True, exist_ok=True)
 
     print(
         f"[{time.strftime('%F %T')}] run_id={run_id} config_dir={config_dir} workdir={workdir} datapool_root={datapool_root} dry_run={pipeline_env.get('DRY_RUN','0')}"

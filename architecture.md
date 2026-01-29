@@ -118,6 +118,6 @@ LLMRunner/
 - **TRAIN_CMD / CONVERT_CMD 配置位置**：写在对应 step 的 env 里（3.train_cpt.env、4.train_sft.env、5.convert.env）。与 pipeline.env 无关。
 - **CPT_RAW_COPY_SRC**：写在 **steps/2.tokenize_cpt.env**；prepare_exp 从该文件读取。
 - **SFT_RAW_COPY_SRC**：写在 **steps/3.tokenize_sft.env**；prepare_exp 和 step 4 从该文件读取。
-- MindSpeed 实验：steps 3/4/5 中设置 `RUN_WITH=entrypoint`、`MINDSPEED_DIR`、`ENTRYPOINT`、`ARGS`。
-- NVIDIA 实验：steps 3/4/5 中设置 `RUN_WITH=cmd`、`TRAINER_DIR`、`TRAIN_CMD` 或 `CONVERT_CMD`（一条完整命令）。
+- MindSpeed 实验：steps 3/4/5 中设置 `RUN_WITH=entrypoint`、`MINDSPEED`、`ENTRYPOINT`、`ARGS`。
+- NVIDIA 实验：steps 3/4/5 中设置 `RUN_WITH=cmd`、`MEGATRON`、`TRAIN_CMD` 或 `CONVERT_CMD`（一条完整命令）。
 

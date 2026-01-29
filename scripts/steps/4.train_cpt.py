@@ -12,6 +12,7 @@ from pathlib import Path
 # Add utils to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "utils"))
 from config import load_config_module, resolve_config_vars, require_config, require_path_exists
+from step_utils import apply_pipeline_context, run_extern_script
 
 
 def main() -> int:
@@ -37,22 +38,30 @@ def main() -> int:
         "ROOT_DIR": str(root_dir),
         "DATAPOOL_ROOT": str(datapool_root),
     }
-    # Add pipeline config variables (BASE_MODEL_NAME, BASE_MODEL_SRC, BASE_MODEL_PATH, MODEL_PREFIX)
-    for key in ["BASE_MODEL_NAME", "BASE_MODEL_SRC", "BASE_MODEL_PATH", "MODEL_PREFIX"]:
-        if key in os.environ:
-            context[key] = os.environ[key]
+    # Add pipeline config variables (BASE_MODEL_NAME, BASE_MODEL_SRC, BASE_MODEL_PATH, MODEL_PREFIX, MEGATRON, MINDSPEED)
+    apply_pipeline_context(context, os.environ)
     config = resolve_config_vars(config, context)
     
+    # Extern script shortcut (run entire training outside this step)
+    extern_result = run_extern_script(
+        config,
+        root_dir=root_dir,
+        dry_run=dry_run,
+        step_name="train_cpt",
+    )
+    if extern_result is not None:
+        return extern_result
+
     # Extract required config
     run_with = config.get("RUN_WITH")
     if run_with not in ("cmd", "entrypoint"):
         print("train_cpt: set RUN_WITH=cmd (and TRAIN_CMD) or RUN_WITH=entrypoint (and ENTRYPOINT, ARGS) in step config", file=sys.stderr)
         return 2
     
-    # TRAINER_DIR or MINDSPEED_DIR
-    trainer_dir_str = config.get("TRAINER_DIR") or config.get("MINDSPEED_DIR")
+    # MEGATRON or MINDSPEED
+    trainer_dir_str = config.get("MEGATRON") or config.get("MINDSPEED")
     if not trainer_dir_str:
-        print("train_cpt: set TRAINER_DIR or MINDSPEED_DIR in step config", file=sys.stderr)
+        print("train_cpt: set MEGATRON or MINDSPEED in step config", file=sys.stderr)
         return 2
     
     trainer_dir = require_path_exists(trainer_dir_str, root_dir, "train_cpt")

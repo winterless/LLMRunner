@@ -11,18 +11,9 @@ from pathlib import Path
 
 # Add utils to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "utils"))
-from config import load_config_module, resolve_config_vars, require_config, require_path_exists
+from config import load_config_module, merge_env_defaults, resolve_config_vars, require_config, require_path_exists
+from step_utils import apply_pipeline_context, resolve_path, run_extern_script
 from tokenize_utils import expand_input_pattern
-
-
-def resolve_path(path_str: str, root_dir: Path) -> Path:
-    """Resolve a path string to absolute Path."""
-    if not path_str:
-        raise ValueError("Empty path")
-    path = Path(path_str)
-    if path.is_absolute():
-        return path.resolve()
-    return (root_dir / path).resolve()
 
 
 def main() -> int:
@@ -47,23 +38,47 @@ def main() -> int:
     
     # Load and resolve config
     config = load_config_module(config_path)
+    merge_env_defaults(config, os.environ)
     context = {
         "DATAPOOL_ROOT": str(datapool_root),
         "ROOT_DIR": str(root_dir),
     }
-    # Add pipeline config variables (BASE_MODEL_NAME, BASE_MODEL_SRC, BASE_MODEL_PATH, MODEL_PREFIX)
-    for key in ["BASE_MODEL_NAME", "BASE_MODEL_SRC", "BASE_MODEL_PATH", "MODEL_PREFIX"]:
-        if key in os.environ:
-            context[key] = os.environ[key]
+    # Add pipeline config variables (BASE_MODEL_NAME, BASE_MODEL_SRC, BASE_MODEL_PATH, MODEL_PREFIX, MEGATRON, MINDSPEED)
+    apply_pipeline_context(context, os.environ)
     config = resolve_config_vars(config, context)
     
+    # Extern script shortcut (run entire tokenize outside this step)
+    extern_result = run_extern_script(
+        config,
+        root_dir=root_dir,
+        dry_run=dry_run,
+        step_name="tokenize_cpt",
+    )
+    if extern_result is not None:
+        return extern_result
+
     # Extract required config
     # INPUT_DIR can be: directory path or single file path (glob patterns are not supported)
     # It will be expanded and merged into a single file before processing
     input_path = require_config(config, "INPUT_DIR", "tokenize_cpt")
     tokenizer_model = require_config(config, "TOKENIZER_MODEL", "tokenize_cpt")
     output_prefix = require_config(config, "OUTPUT_PREFIX", "tokenize_cpt")
-    megatron_dir = require_path_exists(require_config(config, "MEGATRON_DIR", "tokenize_cpt"), root_dir, "tokenize_cpt")
+
+    megatron_dir = config.get("MEGATRON")
+    mindspeed_dir = config.get("MINDSPEED")
+    preprocess_dir_str = megatron_dir or mindspeed_dir
+    if not preprocess_dir_str:
+        print("tokenize_cpt: set MEGATRON or MINDSPEED in step config", file=sys.stderr)
+        return 2
+    preprocess_dir = require_path_exists(preprocess_dir_str, root_dir, "tokenize_cpt")
+    if megatron_dir:
+        preprocess_script_abs = preprocess_dir / "tools" / "preprocess_data.py"
+    else:
+        preprocess_script_abs = preprocess_dir / "preprocess_data.py"
+    if not preprocess_script_abs.exists():
+        print(f"tokenize_cpt: preprocess_data.py not found: {preprocess_script_abs}", file=sys.stderr)
+        return 2
+    preprocess_workdir_abs = preprocess_dir
     
     # Optional config with defaults
     workers = int(config.get("WORKERS", "16"))
@@ -73,17 +88,19 @@ def main() -> int:
     tokenizer_type = config.get("TOKENIZER_TYPE", "HuggingFaceTokenizer")
     tokenizer_vocab_file = config.get("TOKENIZER_VOCAB_FILE")
     conda_env = config.get("CONDA_ENV") or os.environ.get("CONDA_ENV")
-    # MERGE_JSONL option is deprecated - we always merge now
+    merge_jsonl = str(config.get("MERGE_JSONL", "1")) == "1"
+    shuffle_jsonl = str(config.get("SHUFFLE_JSONL", "0")) == "1"
+    shuffle_seed = config.get("SHUFFLE_SEED")
+    shuffle_buffer = int(config.get("SHUFFLE_BUFFER", "10000"))
     
     print("tokenize_cpt: starting")
     
     # Resolve paths
     tokenizer_model_abs = resolve_path(tokenizer_model, root_dir)
     output_prefix_abs = resolve_path(output_prefix, root_dir)
-    
-    # Always expand input path (directory/file) and merge into a single file before processing
-    # This ensures Megatron always receives a single file path
-    merge_output = output_prefix_abs.parent / "merged_input.jsonl"
+    input_dir_abs = resolve_path(input_path, root_dir)
+    # merged_input.jsonl lives under raw/cpt (same as prepare_exp) so it is not cleared with tokenized/cpt
+    merge_output = (input_dir_abs / "merged_input.jsonl") if input_dir_abs.is_dir() else (input_dir_abs.parent / "merged_input.jsonl")
     
     # Extract required keys from JSON_KEYS for filtering during merge
     # This ensures consistent behavior: always create merged_input.jsonl even for single file
@@ -91,25 +108,41 @@ def main() -> int:
         required_keys = json_keys.split()
     else:
         required_keys = json_keys if isinstance(json_keys, list) else None
-    
-    try:
-        input_file_path = expand_input_pattern(
-            input_path,
-            root_dir,
-            merge_files=True,
-            merge_output=merge_output,
-            required_json_keys=required_keys,
-        )
-        input_abs = str(resolve_path(str(input_file_path), root_dir))
-    except (FileNotFoundError, ValueError) as e:
-        print(f"tokenize_cpt: {e}", file=sys.stderr)
-        # Check if CPT_RAW_COPY_SRC is configured
-        cpt_raw_copy_src = config.get("CPT_RAW_COPY_SRC")
-        if cpt_raw_copy_src:
-            print(f"tokenize_cpt: Hint: Run 'python scripts/prepare_exp.py -c {step_env_path.parent.parent}/pipeline.env' to copy data from {cpt_raw_copy_src}", file=sys.stderr)
+
+    # In dry-run, skip merge to avoid heavy I/O on huge datasets
+    if dry_run:
+        input_abs = str(resolve_path(input_path, root_dir))
+    else:
+        if merge_jsonl:
+            merged_ready = merge_output.exists()
+            if merged_ready:
+                input_abs = str(merge_output)
+            else:
+                input_abs = ""
         else:
-            print(f"tokenize_cpt: Hint: Configure CPT_RAW_COPY_SRC in config and run 'prepare_exp' to copy data", file=sys.stderr)
-        return 2
+            input_abs = ""
+        try:
+            if not input_abs:
+                input_file_path = expand_input_pattern(
+                    input_path,
+                    root_dir,
+                    merge_files=merge_jsonl,
+                    merge_output=merge_output,
+                    required_json_keys=required_keys,
+                    shuffle=shuffle_jsonl,
+                    shuffle_seed=int(shuffle_seed) if shuffle_seed else None,
+                    shuffle_buffer=shuffle_buffer,
+                )
+                input_abs = str(resolve_path(str(input_file_path), root_dir))
+        except (FileNotFoundError, ValueError) as e:
+            print(f"tokenize_cpt: {e}", file=sys.stderr)
+            # Check if CPT_RAW_COPY_SRC is configured
+            cpt_raw_copy_src = config.get("CPT_RAW_COPY_SRC")
+            if cpt_raw_copy_src:
+                print(f"tokenize_cpt: Hint: Run 'python scripts/prepare_exp.py -c {step_env_path.parent.parent}/pipeline.env' to copy data from {cpt_raw_copy_src}", file=sys.stderr)
+            else:
+                print(f"tokenize_cpt: Hint: Configure CPT_RAW_COPY_SRC in config and run 'prepare_exp' to copy data", file=sys.stderr)
+            return 2
     
     # Validate paths are under datapool (unless allowed)
     if not allow_external_paths:
@@ -134,7 +167,7 @@ def main() -> int:
     # Build command
     cmd = [
         "python",
-        "tools/preprocess_data.py",
+        str(preprocess_script_abs),
         "--input",
         str(input_abs),
         "--output-prefix",
@@ -160,7 +193,8 @@ def main() -> int:
         tokenizer_vocab_file_abs = resolve_path(tokenizer_vocab_file, root_dir)
         cmd.extend(["--vocab-file", str(tokenizer_vocab_file_abs)])
     
-    print(f"tokenize_cpt: megatron_dir={megatron_dir}")
+    print(f"tokenize_cpt: preprocess_workdir={preprocess_workdir_abs}")
+    print(f"tokenize_cpt: preprocess_script={preprocess_script_abs}")
     print(f"tokenize_cpt: input={input_abs}")
     print(f"tokenize_cpt: output_prefix={output_prefix_abs}")
     print(f"tokenize_cpt: tokenizer_model={tokenizer_model_abs}")
@@ -172,11 +206,11 @@ def main() -> int:
     
     # Execute
     if dry_run:
-        print(f"[dry-run] tokenize_cpt: (cd {megatron_dir} && {' '.join(cmd)})")
+        print(f"[dry-run] tokenize_cpt: (cd {preprocess_workdir_abs} && {' '.join(cmd)})")
         return 0
     
     try:
-        subprocess.run(cmd, cwd=megatron_dir, check=True)
+        subprocess.run(cmd, cwd=preprocess_workdir_abs, check=True)
     except subprocess.CalledProcessError as e:
         print(f"tokenize_cpt: failed with exit code {e.returncode}", file=sys.stderr)
         return e.returncode

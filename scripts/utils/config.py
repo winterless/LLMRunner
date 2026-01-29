@@ -92,6 +92,35 @@ def resolve_config_vars(config: Dict[str, Any], context: Dict[str, str]) -> Dict
     return resolved
 
 
+ENV_IMPORT_KEYS = [
+    "DATAPOOL",
+    "ROOT",
+    "BASE_MODEL_SRC",
+    "MINDSPEED",
+    "MINDSPEED_LLM",
+    "CPT_RAW_COPY_SRC",
+    "SFT_RAW_COPY_SRC",
+]
+
+
+def apply_env_imports(context: Dict[str, str], environ: Dict[str, str]) -> None:
+    """
+    Import selected environment variables into context for ${VAR} expansion.
+    """
+    for key in ENV_IMPORT_KEYS:
+        if key in environ:
+            context[key] = environ[key]
+
+
+def merge_env_defaults(config: Dict[str, Any], environ: Dict[str, str]) -> None:
+    """
+    Populate config with selected env vars (env overrides config).
+    """
+    for key in ENV_IMPORT_KEYS:
+        if key in environ:
+            config[key] = environ[key]
+
+
 def require_config(config: Dict[str, Any], key: str, step_name: str = "") -> str:
     """
     Require a config key to exist and be non-empty.
