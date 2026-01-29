@@ -44,9 +44,11 @@ def main() -> int:
         "ROOT_DIR": str(root_dir),
         "DATAPOOL_ROOT": str(datapool_root),
     }
-    # Add pipeline config variables (BASE_MODEL_PATH)
+    # Add pipeline config variables (BASE_MODEL_PATH / BASE_MODEL_SRC)
     if "BASE_MODEL_PATH" in os.environ:
         context["BASE_MODEL_PATH"] = os.environ["BASE_MODEL_PATH"]
+    if "BASE_MODEL_SRC" in os.environ:
+        context["BASE_MODEL_SRC"] = os.environ["BASE_MODEL_SRC"]
     config = resolve_config_vars(config, context)
     
     # Extract required config

@@ -24,7 +24,7 @@ BASE_MODEL_PATH = "${BASE_MODEL_PATH}"
 # no-save-optim: 不保存优化器状态，减少checkpoint保存时的显存占用（但无法resume训练）
 # checkpoint格式: 使用legacy格式（--ckpt-format torch），保存为单个.pt文件
 # For quick validation, we use very few steps (2 steps)
-TRAIN_CMD = """conda run -n LLMTrain torchrun --nproc_per_node=1 --master_port=29500 pretrain_gpt.py \\
+TRAIN_CMD = """torchrun --nproc_per_node=1 --master_port=29500 pretrain_gpt.py \\
   --data-path ${ROOT_DIR}/${DATA_PATH} \\
   --save ${ROOT_DIR}/${SAVE_DIR} \\
   --tokenizer-model ${BASE_MODEL_PATH} \\
@@ -36,6 +36,8 @@ TRAIN_CMD = """conda run -n LLMTrain torchrun --nproc_per_node=1 --master_port=2
   --ffn-hidden-size 2048 \\
   --seq-length 256 \\
   --max-position-embeddings 40960 \\
+  --position-embedding-type rope \\
+  --rotary-base 1000000 \\
   --vocab-size 151936 \\
   --micro-batch-size 1 \\
   --global-batch-size 1 \\

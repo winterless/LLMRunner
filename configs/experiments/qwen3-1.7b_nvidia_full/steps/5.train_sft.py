@@ -15,7 +15,7 @@ SAVE_DIR = "${DATAPOOL_ROOT}/model/sft_checkpoints"
 BASE_MODEL_PATH = "${BASE_MODEL_PATH}"
 
 # Minimal “run-through” config (single GPU)
-TRAIN_CMD = """conda run -n LLMTrain torchrun --nproc_per_node=1 --master_port=29501 pretrain_gpt.py \\
+TRAIN_CMD = """torchrun --nproc_per_node=1 --master_port=29501 pretrain_gpt.py \\
   --data-path ${ROOT_DIR}/${DATA_PATH} \\
   --load ${ROOT_DIR}/${LOAD_DIR} \\
   --save ${ROOT_DIR}/${SAVE_DIR} \\
@@ -30,6 +30,8 @@ TRAIN_CMD = """conda run -n LLMTrain torchrun --nproc_per_node=1 --master_port=2
   --ffn-hidden-size 2048 \\
   --seq-length 256 \\
   --max-position-embeddings 40960 \\
+  --position-embedding-type rope \\
+  --rotary-base 1000000 \\
   --vocab-size 151936 \\
   --micro-batch-size 1 \\
   --global-batch-size 1 \\
