@@ -2,7 +2,7 @@
 # RUN_WITH=cmd → run TRAIN_CMD (set below). RUN_WITH=entrypoint → run python ENTRYPOINT ARGS. No default.
 RUN_WITH = "cmd"
 TRAINER_DIR = "/home/unlimitediw/workspace/Megatron-LM"
-DATA_PATH = "${DATAPOOL_ROOT}/data/tokenized/cpt/qwen3_4b_text_document"
+DATA_PATH = "${DATAPOOL_ROOT}/data/tokenized/cpt/${MODEL_PREFIX}_text_document"
 SAVE_DIR = "${DATAPOOL_ROOT}/model/cpt_checkpoints"
 # BASE_MODEL_PATH is defined in pipeline.py (single source of truth)
 # Use ${BASE_MODEL_PATH} which will be resolved from pipeline config
@@ -30,11 +30,11 @@ TRAIN_CMD = """conda run -n LLMTrain torchrun --nproc_per_node=1 --master_port=2
   --tokenizer-model ${BASE_MODEL_PATH} \\
   --tokenizer-type HuggingFaceTokenizer \\
   --merge-file '' \\
-  --num-layers 28 \\
-  --hidden-size 2048 \\
-  --num-attention-heads 16 \\
-  --ffn-hidden-size 6144 \\
-  --seq-length 512 \\
+  --num-layers 4 \\
+  --hidden-size 512 \\
+  --num-attention-heads 8 \\
+  --ffn-hidden-size 2048 \\
+  --seq-length 256 \\
   --max-position-embeddings 40960 \\
   --vocab-size 151936 \\
   --micro-batch-size 1 \\

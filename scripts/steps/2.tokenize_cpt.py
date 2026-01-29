@@ -51,8 +51,8 @@ def main() -> int:
         "DATAPOOL_ROOT": str(datapool_root),
         "ROOT_DIR": str(root_dir),
     }
-    # Add pipeline config variables (BASE_MODEL_NAME, BASE_MODEL_SRC, BASE_MODEL_PATH)
-    for key in ["BASE_MODEL_NAME", "BASE_MODEL_SRC", "BASE_MODEL_PATH"]:
+    # Add pipeline config variables (BASE_MODEL_NAME, BASE_MODEL_SRC, BASE_MODEL_PATH, MODEL_PREFIX)
+    for key in ["BASE_MODEL_NAME", "BASE_MODEL_SRC", "BASE_MODEL_PATH", "MODEL_PREFIX"]:
         if key in os.environ:
             context[key] = os.environ[key]
     config = resolve_config_vars(config, context)
@@ -72,6 +72,7 @@ def main() -> int:
     json_keys = config.get("JSON_KEYS", "text")
     tokenizer_type = config.get("TOKENIZER_TYPE", "HuggingFaceTokenizer")
     tokenizer_vocab_file = config.get("TOKENIZER_VOCAB_FILE")
+    conda_env = config.get("CONDA_ENV") or os.environ.get("CONDA_ENV")
     # MERGE_JSONL option is deprecated - we always merge now
     
     print("tokenize_cpt: starting")
@@ -152,6 +153,8 @@ def main() -> int:
         "--log-interval",
         str(log_interval),
     ]
+    if conda_env:
+        cmd = ["conda", "run", "-n", conda_env] + cmd
     
     if tokenizer_vocab_file:
         tokenizer_vocab_file_abs = resolve_path(tokenizer_vocab_file, root_dir)

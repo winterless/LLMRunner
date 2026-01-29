@@ -119,6 +119,7 @@ def get_step_output_dir(
     config_dir: Path,
     root_dir: Path,
     datapool_root: Path,
+    pipeline_env: Optional[Dict[str, str]] = None,
 ) -> Optional[Path]:
     """
     Get the output directory for a step by loading its config.
@@ -161,6 +162,8 @@ def get_step_output_dir(
             "DATAPOOL_ROOT": str(datapool_root),
             "ROOT_DIR": str(root_dir),
         }
+        if pipeline_env and "MODEL_PREFIX" in pipeline_env:
+            context["MODEL_PREFIX"] = pipeline_env["MODEL_PREFIX"]
         config = resolve_config_vars(config, context)
         
         # Determine output directory based on step type
@@ -281,13 +284,13 @@ def run_step(
         }
     )
     # Pass pipeline config variables to steps (for BASE_MODEL_PATH, etc.)
-    for key in ["BASE_MODEL_NAME", "BASE_MODEL_SRC", "BASE_MODEL_PATH"]:
+    for key in ["BASE_MODEL_NAME", "BASE_MODEL_SRC", "BASE_MODEL_PATH", "MODEL_PREFIX"]:
         if key in pipeline_env:
             env[key] = pipeline_env[key]
     # Python scripts load config themselves, no need to update env
 
     # Clear output directory before running the step
-    output_dir = get_step_output_dir(step, config_dir, root_dir, Path(datapool_root))
+    output_dir = get_step_output_dir(step, config_dir, root_dir, Path(datapool_root), pipeline_env)
     if output_dir:
         clear_output_directory(output_dir, step, dry_run=(dry_run == "1"))
 

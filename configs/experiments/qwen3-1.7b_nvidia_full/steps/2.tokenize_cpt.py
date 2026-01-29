@@ -7,8 +7,9 @@ TOKENIZER_MODEL = "${BASE_MODEL_PATH}"
 # HuggingFaceTokenizer 通常不需要显式指定 vocab-file，tokenizer 会自动从 TOKENIZER_MODEL 路径找到 tokenizer.json
 # 如果遇到 tokenizer 加载问题，可以取消注释下面这行：
 # TOKENIZER_VOCAB_FILE = "${DATAPOOL_ROOT}/model/base/Qwen3-4B/Qwen3-4B-Base/tokenizer.json"
-OUTPUT_PREFIX = "${DATAPOOL_ROOT}/data/tokenized/cpt/qwen3_4b"
+OUTPUT_PREFIX = "${DATAPOOL_ROOT}/data/tokenized/cpt/${MODEL_PREFIX}"
 MEGATRON_DIR = "/home/unlimitediw/workspace/Megatron-LM"
+CONDA_ENV = "LLMTrain"
 WORKERS = 32
 # PARTITIONS>1 时，Megatron 会为每个 key 生成 .idx（第 404 行在循环内 finalize）
 PARTITIONS = 1

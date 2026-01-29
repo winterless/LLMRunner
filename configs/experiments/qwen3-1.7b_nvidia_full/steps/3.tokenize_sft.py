@@ -2,7 +2,7 @@
 # Raw copy: SFT 源在下方，prepare_exp 会拷贝到 data/raw/sft
 SFT_RAW_COPY_SRC = "/home/unlimitediw/workspace/TYDeepResearch/UDatasets/out/mixed/mymix/sft"
 INPUT_DIR = "${DATAPOOL_ROOT}/data/raw/sft"
-OUTPUT_PREFIX = "${DATAPOOL_ROOT}/data/tokenized/sft/qwen3_4b_sft_packed"
+OUTPUT_PREFIX = "${DATAPOOL_ROOT}/data/tokenized/sft/${MODEL_PREFIX}_sft_packed"
 # TOKENIZER_MODEL: Use BASE_MODEL_PATH from pipeline.py (single source of truth)
 TOKENIZER_MODEL = "${BASE_MODEL_PATH}"
 # HuggingFaceTokenizer 通常不需要显式指定 vocab-file，tokenizer 会自动从 TOKENIZER_MODEL 路径找到 tokenizer.json

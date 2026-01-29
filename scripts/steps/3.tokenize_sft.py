@@ -52,8 +52,8 @@ def main() -> int:
         "DATAPOOL_ROOT": str(datapool_root),
         "ROOT_DIR": str(root_dir),
     }
-    # Add pipeline config variables (BASE_MODEL_NAME, BASE_MODEL_SRC, BASE_MODEL_PATH)
-    for key in ["BASE_MODEL_NAME", "BASE_MODEL_SRC", "BASE_MODEL_PATH"]:
+    # Add pipeline config variables (BASE_MODEL_NAME, BASE_MODEL_SRC, BASE_MODEL_PATH, MODEL_PREFIX)
+    for key in ["BASE_MODEL_NAME", "BASE_MODEL_SRC", "BASE_MODEL_PATH", "MODEL_PREFIX"]:
         if key in os.environ:
             context[key] = os.environ[key]
     config = resolve_config_vars(config, context)
