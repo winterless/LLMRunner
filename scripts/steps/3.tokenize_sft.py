@@ -111,7 +111,6 @@ def main() -> int:
     json_keys = config.get("JSON_KEYS") or config.get("SFT_JSON_KEYS", "instruction input output")
     tokenizer_type = config.get("TOKENIZER_TYPE", "HuggingFaceTokenizer")
     tokenizer_vocab_file = config.get("TOKENIZER_VOCAB_FILE")
-    conda_env = config.get("CONDA_ENV") or os.environ.get("CONDA_ENV")
     merge_jsonl = str(config.get("MERGE_JSONL", "1")) == "1"
     shuffle_jsonl = str(config.get("SHUFFLE_JSONL", "0")) == "1"
     shuffle_seed = config.get("SHUFFLE_SEED")
@@ -223,8 +222,6 @@ def main() -> int:
         str(output_prefix_abs),
         "--json-keys",
     ]
-    if conda_env:
-        cmd = ["conda", "run", "-n", conda_env] + cmd
     # JSON_KEYS can be space-separated string or list
     if isinstance(json_keys, str):
         cmd.extend(json_keys.split())

@@ -1,7 +1,6 @@
 # step5: NVIDIA checkpoint → HF. RUN_WITH=cmd → run CONVERT_CMD (set in this file). RUN_WITH=entrypoint → python ENTRYPOINT ARGS.
 RUN_WITH = "cmd"
 MEGATRON = "${MEGATRON}"
-CONDA_ENV = "LLMTrain"
 IN_CKPT_DIR = "${DATAPOOL_ROOT}/model/sft_checkpoints"
 OUT_HF_DIR = "${DATAPOOL_ROOT}/model/hf"
 # Converter: Megatron-LM tools/checkpoint (Megatron -> HF, no TE)

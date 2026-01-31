@@ -87,7 +87,6 @@ def main() -> int:
     json_keys = config.get("JSON_KEYS", "text")
     tokenizer_type = config.get("TOKENIZER_TYPE", "HuggingFaceTokenizer")
     tokenizer_vocab_file = config.get("TOKENIZER_VOCAB_FILE")
-    conda_env = config.get("CONDA_ENV") or os.environ.get("CONDA_ENV")
     merge_jsonl = str(config.get("MERGE_JSONL", "1")) == "1"
     shuffle_jsonl = str(config.get("SHUFFLE_JSONL", "0")) == "1"
     shuffle_seed = config.get("SHUFFLE_SEED")
@@ -186,9 +185,6 @@ def main() -> int:
         "--log-interval",
         str(log_interval),
     ]
-    if conda_env:
-        cmd = ["conda", "run", "-n", conda_env] + cmd
-    
     if tokenizer_vocab_file:
         tokenizer_vocab_file_abs = resolve_path(tokenizer_vocab_file, root_dir)
         cmd.extend(["--vocab-file", str(tokenizer_vocab_file_abs)])

@@ -17,7 +17,6 @@ JSON_KEYS = "text"
 # MindSpeed directory
 MINDSPEED = "${MINDSPEED}"
 
-CONDA_ENV = "LLMTrain"
 WORKERS = 32
 # PARTITIONS>1 时，preprocess 会为每个 key 生成 .idx
 PARTITIONS = 1

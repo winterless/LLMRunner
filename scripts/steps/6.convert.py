@@ -63,8 +63,6 @@ def main() -> int:
     
     trainer_dir = require_path_exists(trainer_dir_str, root_dir, "convert")
     
-    conda_env = config.get("CONDA_ENV") or os.environ.get("CONDA_ENV")
-
     if run_with == "cmd":
         convert_cmd = config.get("CONVERT_CMD")
         if not convert_cmd:
@@ -124,17 +122,11 @@ def main() -> int:
     # Execute
     try:
         if run_with == "cmd":
-            cmd_str = convert_cmd
-            if conda_env:
-                escaped = cmd_str.replace('"', '\\"')
-                cmd_str = f'conda run -n {conda_env} bash -lc "{escaped}"'
-            subprocess.run(cmd_str, shell=True, cwd=trainer_dir, check=True)
+            subprocess.run(convert_cmd, shell=True, cwd=trainer_dir, check=True)
         else:
             cmd = ["python", entrypoint]
             if args:
                 cmd.extend(args.split())
-            if conda_env:
-                cmd = ["conda", "run", "-n", conda_env] + cmd
             subprocess.run(cmd, cwd=trainer_dir, check=True)
     except subprocess.CalledProcessError as e:
         print(f"convert: failed with exit code {e.returncode}", file=sys.stderr)

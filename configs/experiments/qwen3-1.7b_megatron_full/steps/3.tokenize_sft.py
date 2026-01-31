@@ -17,7 +17,6 @@ PROMPT_INPUT_TEMPLATE = "### Input:\n{input}\n"
 PROMPT_RESPONSE_PREFIX = "### Response:\n"
 JSON_KEYS = "text"
 MEGATRON = "${MEGATRON}"
-CONDA_ENV = "LLMTrain"
 WORKERS = 32
 # PARTITIONS>1 时，Megatron 会为每个 key 生成 .idx（第 404 行在循环内 finalize）
 PARTITIONS = 1
