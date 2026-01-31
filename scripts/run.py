@@ -129,19 +129,6 @@ def get_step_output_dir(
             output_prefix = config.get("OUTPUT_PREFIX") or config.get("SFT_OUTPUT_PREFIX")
             if output_prefix:
                 return Path(output_prefix).parent
-        elif step == "train_cpt":
-            # Checkpoint directory - may be in config or default location
-            checkpoint_dir = config.get("CHECKPOINT_DIR") or config.get("CPT_CHECKPOINT_DIR")
-            if checkpoint_dir:
-                return Path(checkpoint_dir)
-            # Default: datapool/model/cpt_checkpoints
-            return datapool_root / "model" / "cpt_checkpoints"
-        elif step == "train_sft":
-            checkpoint_dir = config.get("CHECKPOINT_DIR") or config.get("SFT_CHECKPOINT_DIR")
-            if checkpoint_dir:
-                return Path(checkpoint_dir)
-            # Default: datapool/model/sft_checkpoints
-            return datapool_root / "model" / "sft_checkpoints"
         elif step == "convert":
             output_dir = config.get("OUTPUT_DIR") or config.get("HF_OUTPUT_DIR")
             if output_dir:

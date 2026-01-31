@@ -3,6 +3,3 @@
 EXTERN_SCRIPT = "${MINDSPEED}/scripts/run_sft.sh"
 EXTERN_SCRIPT_ARGS = ""
 
-# 用于清理/归档的目录提示（由 run.py 读取）
-CHECKPOINT_DIR = "${DATAPOOL_ROOT}/model/sft_checkpoints"
-

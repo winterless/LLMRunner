@@ -150,17 +150,20 @@ def prepare_from_env(
                     required_keys = json_keys.split()
                 else:
                     required_keys = json_keys if isinstance(json_keys, list) else None
-                tokenize_utils.expand_input_pattern(
-                    input_path,
-                    root_dir,
-                    merge_files=True,
-                    merge_output=merge_output,
-                    required_json_keys=required_keys,
-                    shuffle=shuffle_jsonl,
-                    shuffle_seed=int(shuffle_seed) if shuffle_seed else None,
-                    shuffle_buffer=shuffle_buffer,
-                )
-                print(f"[{time.strftime('%F %T')}] CPT merge_jsonl: output={merge_output} shuffle={shuffle_jsonl}")
+                if merge_output.exists():
+                    print(f"[{time.strftime('%F %T')}] CPT merge_jsonl: skipped (exists) output={merge_output}")
+                else:
+                    tokenize_utils.expand_input_pattern(
+                        input_path,
+                        root_dir,
+                        merge_files=True,
+                        merge_output=merge_output,
+                        required_json_keys=required_keys,
+                        shuffle=shuffle_jsonl,
+                        shuffle_seed=int(shuffle_seed) if shuffle_seed else None,
+                        shuffle_buffer=shuffle_buffer,
+                    )
+                    print(f"[{time.strftime('%F %T')}] CPT merge_jsonl: output={merge_output} shuffle={shuffle_jsonl}")
             else:
                 print(f"[{time.strftime('%F %T')}] CPT merge_jsonl: skipped (missing INPUT_DIR/OUTPUT_PREFIX)")
 
@@ -204,17 +207,20 @@ def prepare_from_env(
                     required_keys = json_keys.split()
                 else:
                     required_keys = json_keys if isinstance(json_keys, list) else None
-                tokenize_utils.expand_input_pattern(
-                    input_path,
-                    root_dir,
-                    merge_files=True,
-                    merge_output=merge_output,
-                    required_json_keys=required_keys,
-                    shuffle=shuffle_jsonl,
-                    shuffle_seed=int(shuffle_seed) if shuffle_seed else None,
-                    shuffle_buffer=shuffle_buffer,
-                )
-                print(f"[{time.strftime('%F %T')}] SFT merge_jsonl: output={merge_output} shuffle={shuffle_jsonl}")
+                if merge_output.exists():
+                    print(f"[{time.strftime('%F %T')}] SFT merge_jsonl: skipped (exists) output={merge_output}")
+                else:
+                    tokenize_utils.expand_input_pattern(
+                        input_path,
+                        root_dir,
+                        merge_files=True,
+                        merge_output=merge_output,
+                        required_json_keys=required_keys,
+                        shuffle=shuffle_jsonl,
+                        shuffle_seed=int(shuffle_seed) if shuffle_seed else None,
+                        shuffle_buffer=shuffle_buffer,
+                    )
+                    print(f"[{time.strftime('%F %T')}] SFT merge_jsonl: output={merge_output} shuffle={shuffle_jsonl}")
             else:
                 print(f"[{time.strftime('%F %T')}] SFT merge_jsonl: skipped (missing INPUT_DIR/OUTPUT_PREFIX)")
 
