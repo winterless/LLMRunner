@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Step 5: Model conversion
+Step 8: Model conversion
 """
 from __future__ import annotations
 
@@ -23,17 +23,17 @@ def main() -> int:
     datapool_root = Path(os.environ.get("DATAPOOL_ROOT", "datapool"))
     step_env_path = Path(os.environ.get("STEP_ENV_PATH", ""))
     dry_run = os.environ.get("DRY_RUN", "0") == "1"
-    
+
     # Load config - run.py already found the config file and passed it via STEP_ENV_PATH
     if not step_env_path or not step_env_path.exists():
         print(f"Missing config: STEP_ENV_PATH not set or file not found: {step_env_path}", file=sys.stderr)
         return 2
-    
+
     # If it's a .env file, error - user should migrate to .py
     if step_env_path.suffix == ".env":
         print(f"convert: .env files are deprecated, please migrate to .py config: {step_env_path}", file=sys.stderr)
         return 2
-    
+
     # Load and resolve config
     config = load_config_module(step_env_path)
     if not datapool_root.is_absolute():
@@ -48,21 +48,21 @@ def main() -> int:
     # Add pipeline config variables (BASE_MODEL_NAME, BASE_MODEL_SRC, BASE_MODEL_PATH, MODEL_PREFIX, MEGATRON, MINDSPEED)
     apply_pipeline_context(context, os.environ)
     config = resolve_config_vars(config, context)
-    
+
     # Extract required config
     run_with = config.get("RUN_WITH")
     if run_with not in ("cmd", "entrypoint"):
         print("convert: set RUN_WITH=cmd (and CONVERT_CMD) or RUN_WITH=entrypoint (and ENTRYPOINT, ARGS) in step config", file=sys.stderr)
         return 2
-    
+
     # MEGATRON or MINDSPEED
     trainer_dir_str = config.get("MEGATRON") or config.get("MINDSPEED")
     if not trainer_dir_str:
         print("convert: set MEGATRON or MINDSPEED in step config", file=sys.stderr)
         return 2
-    
+
     trainer_dir = require_path_exists(trainer_dir_str, root_dir, "convert")
-    
+
     if run_with == "cmd":
         convert_cmd = config.get("CONVERT_CMD")
         if not convert_cmd:
@@ -75,9 +75,9 @@ def main() -> int:
     else:  # entrypoint
         entrypoint = require_config(config, "ENTRYPOINT", "convert")
         args = config.get("ARGS", "")
-    
+
     print(f"convert: trainer_dir={trainer_dir} RUN_WITH={run_with}")
-    
+
     if dry_run:
         if run_with == "cmd":
             if convert_cmd:
@@ -85,7 +85,7 @@ def main() -> int:
         else:
             print(f"[dry-run] (cd {trainer_dir} && python {entrypoint} {args})")
         return 0
-    
+
     def copy_hf_files(when: str) -> None:
         out_hf_dir = config.get("OUT_HF_DIR")
         copy_from = config.get("COPY_HF_FROM")
@@ -134,7 +134,7 @@ def main() -> int:
 
     # Optional: copy tokenizer/config files into HF output dir after conversion
     copy_hf_files("after")
-    
+
     return 0
 
 

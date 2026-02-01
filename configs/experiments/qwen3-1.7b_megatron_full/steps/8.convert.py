@@ -1,4 +1,4 @@
-# step5: NVIDIA checkpoint → HF. RUN_WITH=cmd → run CONVERT_CMD (set in this file). RUN_WITH=entrypoint → python ENTRYPOINT ARGS.
+# step8: NVIDIA checkpoint → HF. RUN_WITH=cmd → run CONVERT_CMD (set in this file). RUN_WITH=entrypoint → python ENTRYPOINT ARGS.
 RUN_WITH = "cmd"
 MEGATRON = "${MEGATRON}"
 IN_CKPT_DIR = "${DATAPOOL_ROOT}/model/sft_checkpoints"

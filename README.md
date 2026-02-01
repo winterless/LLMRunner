@@ -34,11 +34,15 @@ python3 scripts/prepare_exp.py --clone-experiment qwen3-4b_nvidia_full my_new_ex
 2. **tokenize_cpt**: CPT 数据 tokenization（生成 `.bin`/`.idx`）
 3. **tokenize_sft**: SFT 数据 tokenization（生成 `.bin`/`.idx`）
 4. **train_cpt**: CPT 预训练
-5. **train_sft**: SFT 微调
-6. **convert**: 模型转换（Megatron → HuggingFace）
-7. **eval**: 模型评测
+5. **mg2hf**: MG → HF 尺寸转换（extern script）
+6. **hf2mg**: HF → MG 尺寸转换（extern script）
+7. **train_sft**: SFT 微调
+8. **convert**: 模型转换（Megatron → HuggingFace）
+9. **eval**: 模型评测
 
 通过 `pipeline.py` 中的 `STEP_*_ENABLED = 1/0` 控制各步骤的启用。
+
+当前流水线提供 tokenize、train_cpt、train_sft、转换等标准形式，后续计划支持可插拔式步骤编排。
 
 ## 配置系统
 

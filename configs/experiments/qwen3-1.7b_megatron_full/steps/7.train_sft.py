@@ -1,4 +1,4 @@
-# step4: NVIDIA SFT (Megatron-LM pretrain_gpt.py finetune mode)
+# step7: NVIDIA SFT (Megatron-LM pretrain_gpt.py finetune mode)
 #
 # 目标：从 CPT checkpoint 加载权重（--load），用 tokenize_sft 产物训练/验证最小闭环。
 # 注意：Megatron-LM 默认 --ckpt-format=torch_dist（会产出 .distcp）。

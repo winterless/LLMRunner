@@ -11,7 +11,17 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 
-STEP_ORDER: List[str] = ["udatasets", "tokenize_cpt", "tokenize_sft", "train_cpt", "train_sft", "convert", "eval"]
+STEP_ORDER: List[str] = [
+    "udatasets",
+    "tokenize_cpt",
+    "tokenize_sft",
+    "train_cpt",
+    "mg2hf",
+    "hf2mg",
+    "train_sft",
+    "convert",
+    "eval",
+]
 STEP_NUM: Dict[str, int] = {step: i + 1 for i, step in enumerate(STEP_ORDER)}
 
 

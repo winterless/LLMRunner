@@ -1,7 +1,6 @@
 # step4: MindSpeed CPT training (extern script)
 # EXTERN_SCRIPT: 直接运行可替代本 step 的全部逻辑
 EXTERN_SCRIPT = "${MINDSPEED}/scripts/run_cpt.sh"
-EXTERN_SCRIPT_ARGS = ""
 
 # CPT train_config（原封不动，导出为环境变量供 run_cpt.sh 使用）
 CKPT_LOAD_DIR = "/"
