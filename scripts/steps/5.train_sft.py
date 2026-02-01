@@ -42,6 +42,12 @@ def main() -> int:
     # Add pipeline config variables (BASE_MODEL_NAME, BASE_MODEL_SRC, BASE_MODEL_PATH, MODEL_PREFIX, MEGATRON, MINDSPEED)
     apply_pipeline_context(context, os.environ)
     config = resolve_config_vars(config, context)
+
+    # Export resolved config values for child scripts (e.g., bash wrappers)
+    env = os.environ.copy()
+    for key, value in config.items():
+        if isinstance(key, str):
+            env[key] = str(value)
     
     # Extern script shortcut (run entire training outside this step)
     extern_result = run_extern_script(
@@ -114,12 +120,12 @@ def main() -> int:
     # Execute
     try:
         if run_with == "cmd":
-            subprocess.run(train_cmd, shell=True, cwd=trainer_dir, check=True)
+            subprocess.run(train_cmd, shell=True, cwd=trainer_dir, env=env, check=True)
         else:
             cmd = ["python", entrypoint]
             if args:
                 cmd.extend(args.split())
-            subprocess.run(cmd, cwd=trainer_dir, check=True)
+            subprocess.run(cmd, cwd=trainer_dir, env=env, check=True)
     except subprocess.CalledProcessError as e:
         print(f"train_sft: failed with exit code {e.returncode}", file=sys.stderr)
         return e.returncode

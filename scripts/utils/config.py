@@ -35,16 +35,22 @@ def load_config_module(config_path: Path) -> Dict[str, Any]:
     sys.modules["config"] = module
     spec.loader.exec_module(module)
     
-    # Extract all uppercase variables (convention for config)
+    # Extract all non-private variables (uppercase and lowercase)
     config: Dict[str, Any] = {}
     for name in dir(module):
-        if name.isupper() and not name.startswith("_"):
-            value = getattr(module, name)
-            # Convert to string for compatibility with env-based code
-            if isinstance(value, (str, int, float, bool)):
-                config[name] = str(value)
-            else:
-                config[name] = value
+        if name.startswith("_"):
+            continue
+        value = getattr(module, name)
+        # Skip callables and modules
+        if callable(value):
+            continue
+        if isinstance(value, type(importlib)):
+            continue
+        # Convert to string for compatibility with env-based code
+        if isinstance(value, (str, int, float, bool)):
+            config[name] = str(value)
+        else:
+            config[name] = value
     
     return config
 
