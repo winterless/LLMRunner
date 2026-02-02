@@ -5,7 +5,6 @@ Step 8: Model conversion
 from __future__ import annotations
 
 import os
-import shlex
 import shutil
 import subprocess
 import sys
@@ -14,7 +13,7 @@ from pathlib import Path
 # Add utils to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "utils"))
 from config import load_config_module, resolve_config_vars, require_config, require_path_exists
-from step_utils import apply_pipeline_context
+from step_utils import apply_pipeline_context, run_extern_script
 
 
 def main() -> int:
@@ -48,6 +47,16 @@ def main() -> int:
     # Add pipeline config variables (BASE_MODEL_NAME, BASE_MODEL_SRC, BASE_MODEL_PATH, MODEL_PREFIX, MEGATRON, MINDSPEED)
     apply_pipeline_context(context, os.environ)
     config = resolve_config_vars(config, context)
+
+    # Extern script shortcut (run entire conversion outside this step)
+    extern_result = run_extern_script(
+        config,
+        root_dir=root_dir,
+        dry_run=dry_run,
+        step_name="convert",
+    )
+    if extern_result is not None:
+        return extern_result
 
     # Extract required config
     run_with = config.get("RUN_WITH")
