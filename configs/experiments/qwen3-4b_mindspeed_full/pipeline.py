@@ -5,7 +5,7 @@ RUN_ID = ""
 
 DATAPOOL_ROOT = "${DATAPOOL}/experiments/qwen3-4b_mindspeed_full"
 WORKDIR = ".llmrunner"
-DRY_RUN = 0
+DRY_RUN = 1
 
 # Backend paths (shared by steps)
 MINDSPEED = "/home/unlimitediw/workspace/MindSpeed"
@@ -13,9 +13,9 @@ MINDSPEED = "/home/unlimitediw/workspace/MindSpeed"
 STEP_UDATASETS_ENABLED = 0
 STEP_TOKENIZE_CPT_ENABLED = 0
 STEP_TOKENIZE_SFT_ENABLED = 0
-STEP_TRAIN_CPT_ENABLED = 1
-STEP_MG2HF_ENABLED = 1
-STEP_HF2MG_ENABLED = 1
+STEP_TRAIN_CPT_ENABLED = 0
+STEP_MG2HF_ENABLED = 0
+STEP_HF2MG_ENABLED = 0
 STEP_TRAIN_SFT_ENABLED = 0
 STEP_CONVERT_ENABLED = 0
 STEP_EVAL_ENABLED = 0

@@ -58,10 +58,10 @@ def main() -> int:
         return extern_result
 
     # Extract required config
-    # INPUT_DIR can be: directory path or single file path (glob patterns are not supported)
+    # INPUT_DATA_PATH can be: directory path or single file path (glob patterns are not supported)
     # It will be expanded and merged into a single file before processing
-    input_path = require_config(config, "INPUT_DIR", "tokenize_cpt")
-    tokenizer_model = require_config(config, "TOKENIZER_MODEL", "tokenize_cpt")
+    input_path = require_config(config, "INPUT_DATA_PATH", "tokenize_cpt")
+    tokenizer_path = require_config(config, "TOKENIZER_PATH", "tokenize_cpt")
     output_prefix = require_config(config, "OUTPUT_PREFIX", "tokenize_cpt")
 
     megatron_dir = config.get("MEGATRON")
@@ -95,7 +95,7 @@ def main() -> int:
     print("tokenize_cpt: starting")
     
     # Resolve paths
-    tokenizer_model_abs = resolve_path(tokenizer_model, root_dir)
+    tokenizer_path_abs = resolve_path(tokenizer_path, root_dir)
     output_prefix_abs = resolve_path(output_prefix, root_dir)
     input_dir_abs = resolve_path(input_path, root_dir)
     # merged_input.jsonl lives under raw/cpt (same as prepare_exp) so it is not cleared with tokenized/cpt
@@ -149,7 +149,7 @@ def main() -> int:
         input_check = str(input_abs) if isinstance(input_abs, Path) else input_abs
         if not input_check.startswith(str(datapool_abs) + "/"):
             print(
-                f"tokenize_cpt: INPUT_DIR must be under DATAPOOL_ROOT ({datapool_abs}) but got: {input_check}",
+                f"tokenize_cpt: INPUT_DATA_PATH must be under DATAPOOL_ROOT ({datapool_abs}) but got: {input_check}",
                 file=sys.stderr,
             )
             print("tokenize_cpt: set ALLOW_EXTERNAL_PATHS=1 in pipeline.env to override", file=sys.stderr)
@@ -176,7 +176,7 @@ def main() -> int:
         "--tokenizer-type",
         tokenizer_type,
         "--tokenizer-model",
-        str(tokenizer_model_abs),
+        str(tokenizer_path_abs),
         "--append-eod",
         "--workers",
         str(workers),
@@ -193,7 +193,7 @@ def main() -> int:
     print(f"tokenize_cpt: preprocess_script={preprocess_script_abs}")
     print(f"tokenize_cpt: input={input_abs}")
     print(f"tokenize_cpt: output_prefix={output_prefix_abs}")
-    print(f"tokenize_cpt: tokenizer_model={tokenizer_model_abs}")
+    print(f"tokenize_cpt: tokenizer_path={tokenizer_path_abs}")
     if tokenizer_vocab_file:
         print(f"tokenize_cpt: tokenizer_vocab_file={tokenizer_vocab_file_abs}")
     

@@ -3,10 +3,10 @@
 EXTERN_SCRIPT = "${MINDSPEED}/scripts/run_cpt.sh"
 
 # CPT train_config（原封不动，导出为环境变量供 run_cpt.sh 使用）
-CKPT_LOAD_DIR = "/"
-CKPT_SAVE_DIR = "/"
-DATA_LOAD_DIR = "/"
-TOKENIZER_PATH = "/"
+INPUT_MODEL_PATH = "${DATAPOOL_ROOT}/model/cpt_checkpoints"
+OUTPUT_MODEL_PATH = "${DATAPOOL_ROOT}/model/cpt_checkpoints"
+INPUT_DATA_PATH = "${DATAPOOL_ROOT}/data/tokenized/output"
+TOKENIZER_PATH = "${BASE_MODEL_SRC}"
 OUTPUT_PREFIX = ""
 ds_prefix = "ds"
 

@@ -136,13 +136,12 @@ def prepare_from_env(
     if cpt_config_path.exists():
         merge_jsonl = str(cpt_config.get("MERGE_JSONL", "1")) == "1"
         if merge_jsonl:
-            input_path = cpt_config.get("INPUT_DIR", "").strip()
-            output_prefix = cpt_config.get("OUTPUT_PREFIX", "").strip()
+            input_path = cpt_config.get("INPUT_DATA_PATH", "").strip()
             json_keys = cpt_config.get("JSON_KEYS", "text")
             shuffle_jsonl = str(cpt_config.get("SHUFFLE_JSONL", "0")) == "1"
             shuffle_seed = cpt_config.get("SHUFFLE_SEED")
             shuffle_buffer = int(cpt_config.get("SHUFFLE_BUFFER", "10000"))
-            if input_path and output_prefix:
+            if input_path:
                 input_abs = _resolve_path(input_path, root_dir)
                 # Write merged input under raw/cpt so it is not cleared when tokenized/cpt is cleared
                 merge_output = (input_abs / "merged_input.jsonl") if input_abs.is_dir() else (input_abs.parent / "merged_input.jsonl")
@@ -165,7 +164,7 @@ def prepare_from_env(
                     )
                     print(f"[{time.strftime('%F %T')}] CPT merge_jsonl: output={merge_output} shuffle={shuffle_jsonl}")
             else:
-                print(f"[{time.strftime('%F %T')}] CPT merge_jsonl: skipped (missing INPUT_DIR/OUTPUT_PREFIX)")
+                print(f"[{time.strftime('%F %T')}] CPT merge_jsonl: skipped (missing INPUT_DATA_PATH)")
 
     # Copy SFT raw data
     if sft_config_path.exists():
@@ -193,13 +192,12 @@ def prepare_from_env(
     if sft_config_path.exists():
         merge_jsonl = str(sft_config.get("MERGE_JSONL", "1")) == "1"
         if merge_jsonl:
-            input_path = sft_config.get("INPUT_DIR") or sft_config.get("SFT_INPUT_DIR", "")
-            output_prefix = sft_config.get("OUTPUT_PREFIX") or sft_config.get("SFT_OUTPUT_PREFIX", "")
+            input_path = sft_config.get("INPUT_DATA_PATH") or sft_config.get("SFT_INPUT_DATA_PATH", "")
             json_keys = sft_config.get("JSON_KEYS") or sft_config.get("SFT_JSON_KEYS", "instruction input output")
             shuffle_jsonl = str(sft_config.get("SHUFFLE_JSONL", "0")) == "1"
             shuffle_seed = sft_config.get("SHUFFLE_SEED")
             shuffle_buffer = int(sft_config.get("SHUFFLE_BUFFER", "10000"))
-            if input_path and output_prefix:
+            if input_path:
                 input_abs = _resolve_path(input_path, root_dir)
                 # Write merged input under raw/sft so it is not cleared when tokenized/sft is cleared
                 merge_output = (input_abs / "merged_input.jsonl") if input_abs.is_dir() else (input_abs.parent / "merged_input.jsonl")
@@ -222,7 +220,7 @@ def prepare_from_env(
                     )
                     print(f"[{time.strftime('%F %T')}] SFT merge_jsonl: output={merge_output} shuffle={shuffle_jsonl}")
             else:
-                print(f"[{time.strftime('%F %T')}] SFT merge_jsonl: skipped (missing INPUT_DIR/OUTPUT_PREFIX)")
+                print(f"[{time.strftime('%F %T')}] SFT merge_jsonl: skipped (missing INPUT_DATA_PATH)")
 
     print(f"[{time.strftime('%F %T')}] prepare_exp done")
 

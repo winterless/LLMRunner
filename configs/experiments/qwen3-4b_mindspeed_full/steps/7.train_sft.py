@@ -1,12 +1,12 @@
 # step7: MindSpeed SFT training (extern script)
 # EXTERN_SCRIPT: 直接运行可替代本 step 的全部逻辑
-EXTERN_SCRIPT = "${MINDSPEED}/scripts/run_sft.sh"
+EXTERN_SCRIPT = "echo 7.train sft"
 
 # SFT train_config (exported as env for run_sft.sh)
-CKPT_LOAD_DIR = "/"
-CKPT_SAVE_DIR = "/"
-DATA_PATH = "/"
-TOKENIZER_PATH = "/"
+INPUT_MODEL_PATH = "${DATAPOOL_ROOT}/model/hf/ckpt_1000b"
+OUTPUT_MODEL_PATH = "${DATAPOOL_ROOT}/model/sft_checkpoints"
+INPUT_DATA_PATH = "${DATAPOOL_ROOT}/data/tokenized/sft"
+TOKENIZER_PATH = "${BASE_MODEL_PATH}"
 
 PP = 1
 CP = 1

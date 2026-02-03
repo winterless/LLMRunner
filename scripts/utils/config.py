@@ -17,7 +17,7 @@ def load_config_module(config_path: Path) -> Dict[str, Any]:
     
     The config file should define variables directly (not in a dict).
     Example:
-        INPUT_DIR = "${DATAPOOL_ROOT}/data/raw/cpt"
+        INPUT_DATA_PATH = "${DATAPOOL_ROOT}/data/raw/cpt"
         WORKERS = 32
     
     Variables are returned as a dict with string values (for compatibility
@@ -63,9 +63,9 @@ def resolve_config_vars(config: Dict[str, Any], context: Dict[str, str]) -> Dict
     Resolves in multiple passes to handle dependencies.
     
     Example:
-        config = {"INPUT_DIR": "${DATAPOOL_ROOT}/data/raw"}
+        config = {"INPUT_DATA_PATH": "${DATAPOOL_ROOT}/data/raw"}
         context = {"DATAPOOL_ROOT": "/path/to/datapool"}
-        result = {"INPUT_DIR": "/path/to/datapool/data/raw"}
+        result = {"INPUT_DATA_PATH": "/path/to/datapool/data/raw"}
     """
     resolved: Dict[str, str] = {}
     # First pass: copy all values
