@@ -228,15 +228,10 @@ def expand_input_pattern(
         )
     
     if path.is_dir():
-        # Directory: find all .jsonl files, but exclude partition files (e.g., *_0.jsonl, *_1.jsonl)
-        all_jsonl = sorted(path.glob("*.jsonl"))
-        # Filter out partition files: files matching pattern *_<number>.jsonl (but not __<number>.jsonl)
-        # Use negative lookbehind to ensure _ is not preceded by another _
-        import re
-        partition_pattern = re.compile(r'(?<!_)_\d+\.jsonl$')
-        jsonl_files = [f for f in all_jsonl if not partition_pattern.search(f.name)]
+        # Directory: find all .jsonl files
+        jsonl_files = sorted(path.glob("*.jsonl"))
         if not jsonl_files:
-            raise FileNotFoundError(f"No .jsonl files found in directory: {path} (excluding partition files)")
+            raise FileNotFoundError(f"No .jsonl files found in directory: {path}")
     else:
         # Single file path
         if path.suffix != ".jsonl":
