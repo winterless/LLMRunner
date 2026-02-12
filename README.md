@@ -102,3 +102,19 @@ datapool/experiments/<实验名>/
 - **架构设计**: `architecture.md`
 - **流程图**: `LLMRunner1.drawio`
 - **数据目录说明**: `datapool/README.md`
+
+
+## 世界知识
+
+- **1. 大模型搜寻世界知识** 
+    gemini, gpt等强大模型搜索世界数据，从huggingface，github等来源获取数据集
+- **2. 数据集切片分析**
+    数据集如agent data collection的随机采样信息，喂给AI Coder (Cursor, Trae等)，分析出数据特征，设计出对于的数据adapter（详见UDataset adapter模块）；这一步也会拿一些论文的先验指导
+- **3. UDataset数据处理**
+    数据集喂给UDataset清洗，然后Adapter进行数据重构
+- **4. 模型数据训练与评测**
+    数据喂给LLMRunner完成端到端训练与评测，记录评测结果
+- **5. 结果反馈**
+    增益数据归档，增益与负向数据分别总结&抽样喂给（1）搜索大模型-优化搜索过程 （2）AI Coder-优化adapter。并泛化宗教界
+- **备注** 
+    流程完全自动化，可并行；低原始数据要求（无格式要求）；增量评测集提升数据泛化读
