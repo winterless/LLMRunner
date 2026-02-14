@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 
-def load_config_module(config_path: Path) -> Dict[str, Any]:
+def load_config_module(config_path: Path, _visited: set[Path] | None = None) -> Dict[str, Any]:
     """
     Load a Python config file as a module and return its variables.
     
@@ -19,10 +19,17 @@ def load_config_module(config_path: Path) -> Dict[str, Any]:
     Example:
         INPUT_DATA_PATH = "${DATAPOOL_ROOT}/data/raw/cpt"
         WORKERS = 32
+        INCLUDE = "../../common/steps/tokenize_cpt_megatron.py"
     
     Variables are returned as a dict with string values (for compatibility
     with existing code that expects env-like dicts).
     """
+    if _visited is None:
+        _visited = set()
+    config_path = config_path.resolve()
+    if config_path in _visited:
+        raise ValueError(f"Recursive INCLUDE detected: {config_path}")
+    _visited.add(config_path)
     if not config_path.exists():
         raise FileNotFoundError(f"Config file not found: {config_path}")
     
@@ -51,7 +58,22 @@ def load_config_module(config_path: Path) -> Dict[str, Any]:
             config[name] = str(value)
         else:
             config[name] = value
-    
+
+    include_value = config.pop("INCLUDE", None) or config.pop("INCLUDES", None)
+    if include_value:
+        if isinstance(include_value, (str, Path)):
+            includes = [include_value]
+        else:
+            includes = list(include_value)
+        merged: Dict[str, Any] = {}
+        for inc in includes:
+            inc_path = Path(inc)
+            if not inc_path.is_absolute():
+                inc_path = (config_path.parent / inc_path).resolve()
+            merged.update(load_config_module(inc_path, _visited=_visited))
+        merged.update(config)
+        return merged
+
     return config
 
 
@@ -102,10 +124,13 @@ ENV_IMPORT_KEYS = [
     "DATAPOOL",
     "ROOT",
     "BASE_MODEL_SRC",
+    "BASE_MODEL_PATH",
     "MINDSPEED",
     "MINDSPEED_LLM",
     "CPT_RAW_COPY_SRC",
     "SFT_RAW_COPY_SRC",
+    "TOKENIZER_PATH",
+    "SFT_TOKENIZER_PATH",
 ]
 
 

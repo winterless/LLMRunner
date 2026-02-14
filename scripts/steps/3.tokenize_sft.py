@@ -82,7 +82,10 @@ def main() -> int:
                 from prepare_exp import copy_jsonl_flat
                 copy_jsonl_flat(Path(sft_raw_copy_src), input_abs_path)
     
-    tokenizer_path = require_config(config, "TOKENIZER_PATH", "tokenize_sft")
+    tokenizer_path = config.get("SFT_TOKENIZER_PATH") or config.get("TOKENIZER_PATH")
+    if not tokenizer_path:
+        print("tokenize_sft: SFT_TOKENIZER_PATH or TOKENIZER_PATH is required", file=sys.stderr)
+        return 2
     output_prefix = config.get("OUTPUT_PREFIX") or config.get("SFT_OUTPUT_PREFIX")
     if not output_prefix:
         print("tokenize_sft: OUTPUT_PREFIX or SFT_OUTPUT_PREFIX is required", file=sys.stderr)

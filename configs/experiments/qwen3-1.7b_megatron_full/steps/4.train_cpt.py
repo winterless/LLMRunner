@@ -53,7 +53,8 @@ TRAIN_CMD = """torchrun --nproc_per_node=1 --master_port=29500 pretrain_gpt.py \
   --log-interval 5 \
   --save-interval 1000 \
   --eval-interval 1000 \
-  --eval-iters 10 \
+  --eval-iters 0 \
+  --split 100,0,0 \
   --reset-attention-mask \
   --reset-position-ids \
   --tensorboard-dir ${SAVE_DIR}/tensorboard \

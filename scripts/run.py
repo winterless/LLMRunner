@@ -234,8 +234,12 @@ def run_step(
             "DATAPOOL_ROOT": datapool_root,
         }
     )
-    # Pass pipeline config variables to steps (for BASE_MODEL_PATH, etc.)
-    for key in ["BASE_MODEL_NAME", "BASE_MODEL_SRC", "BASE_MODEL_PATH", "MODEL_PREFIX", "MEGATRON", "MINDSPEED", "ROOT"]:
+    # Pass pipeline config variables to steps (for BASE_MODEL_PATH, TOKENIZER_PATH, etc.)
+    for key in [
+        "BASE_MODEL_NAME", "BASE_MODEL_SRC", "BASE_MODEL_PATH",
+        "TOKENIZER_PATH", "SFT_TOKENIZER_PATH",
+        "MODEL_PREFIX", "MEGATRON", "MINDSPEED", "ROOT",
+    ]:
         if key in pipeline_env:
             env[key] = pipeline_env[key]
     # Python scripts load config themselves, no need to update env

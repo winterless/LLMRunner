@@ -1,14 +1,9 @@
 # Experiment: Qwen3-1.7B + Megatron
 
-# RUN_ID 仅用于日志子目录，产出路径按实验唯一（见 datapool/README）
-RUN_ID = ""
+INCLUDE = "../../common/pipeline_megatron.py"
 
 DATAPOOL_ROOT = "${DATAPOOL}/experiments/qwen3-1.7b_megatron_full"
-WORKDIR = ".llmrunner"
 DRY_RUN = 0
-
-# Backend paths (shared by steps)
-MEGATRON = "/home/unlimitediw/workspace/Megatron-LM"
 
 STEP_UDATASETS_ENABLED = 0
 STEP_TOKENIZE_CPT_ENABLED = 1
@@ -28,7 +23,7 @@ BASE_MODEL_NAME = "Qwen3-1.7B"
 BASE_MODEL_SRC = "/home/unlimitediw/workspace/models/Qwen3-1.7B"
 # BASE_MODEL_PATH: 实际模型在 datapool 中的路径（prepare_exp 后，供 steps 使用）
 # 这个路径直接指向包含 safetensors、config.json、tokenizer.json 等的目录
-BASE_MODEL_PATH = "${DATAPOOL_ROOT}/model/base/${BASE_MODEL_NAME}"
+# (defined in configs/common/pipeline_base.py)
 
 # Model prefix for naming tokenized outputs/checkpoints
 MODEL_PREFIX = "qwen3_1p7b"
