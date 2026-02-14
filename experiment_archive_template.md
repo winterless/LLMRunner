@@ -60,7 +60,7 @@ step-level parameters, inputs/outputs, logs, and results for later review.
 
 ## Steps
 - step_id: 1
-  name: <tokenize|train|mg2hf|hf2mg|convert|eval|udatasets|...>
+  name: <tokenize|train|mg2hf|hf2mg|eval|udatasets|...>
   stage: <cpt|sft|other|none>
   status: <success|failed|skipped>
   config: <step_config_path>

@@ -8,21 +8,13 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
-
-STEP_ORDER: List[str] = [
-    "udatasets",
-    "tokenize_cpt",
-    "tokenize_sft",
-    "train_cpt",
-    "mg2hf",
-    "hf2mg",
-    "train_sft",
-    "convert",
-    "eval",
-]
-STEP_NUM: Dict[str, int] = {step: i + 1 for i, step in enumerate(STEP_ORDER)}
+# Allow "from utils.step_registry import ..." when run from scripts/
+_scripts_dir = Path(__file__).resolve().parent
+if str(_scripts_dir) not in sys.path:
+    sys.path.insert(0, str(_scripts_dir))
+from utils.step_registry import Step, get_step, all_step_names
 
 
 def now_run_id() -> str:
@@ -78,142 +70,90 @@ def clear_output_directory(output_dir: Path, step_name: str, dry_run: bool = Fal
     print(f"[{time.strftime('%F %T')}] {step_name}: cleared {file_count} files from {output_dir}")
 
 
+def _load_step_config(
+    step_config_path: Path,
+    root_dir: Path,
+    datapool_root: Path,
+    pipeline_env: Dict[str, str],
+) -> Dict[str, Any]:
+    """Load and resolve step config for output_dir / context."""
+    from config import load_config_module, merge_env_defaults, resolve_config_vars
+    config = load_config_module(step_config_path)
+    merge_env_defaults(config, os.environ)
+    context = {
+        "DATAPOOL_ROOT": str(datapool_root),
+        "ROOT_DIR": str(root_dir),
+    }
+    for key in ["MODEL_PREFIX", "BASE_MODEL_PATH", "MEGATRON", "MINDSPEED"]:
+        if key in pipeline_env:
+            context[key] = pipeline_env[key]
+    return resolve_config_vars(config, context)
+
+
 def get_step_output_dir(
-    step: str,
+    step_obj: Step,
     config_dir: Path,
     root_dir: Path,
     datapool_root: Path,
-    pipeline_env: Optional[Dict[str, str]] = None,
+    pipeline_env: Dict[str, str],
+    occurrence_index: int = 0,
 ) -> Optional[Path]:
-    """
-    Get the output directory for a step by loading its config.
-    
-    Returns:
-        Output directory path, or None if cannot be determined
-    """
-    # Import config utilities using importlib to avoid name conflicts
-    import importlib.util
-    utils_dir = root_dir / "scripts" / "utils"
-    config_utils_path = utils_dir / "config.py"
-    
-    if not config_utils_path.exists():
+    """Get the output directory for a step by loading its config. Returns None if not clearable."""
+    step_config_path = step_obj.resolve_config_path(config_dir, occurrence_index)
+    if not step_config_path.exists():
         return None
-    
-    spec = importlib.util.spec_from_file_location("config_utils", config_utils_path)
-    if spec is None or spec.loader is None:
-        return None
-    
-    config_utils = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(config_utils)
-    
-    load_config_module = config_utils.load_config_module
-    resolve_config_vars = config_utils.resolve_config_vars
-    
-    # Load step config
-    step_config_py = config_dir / "steps" / f"{STEP_NUM[step]}.{step}.py"
-    step_config_unnumbered = config_dir / "steps" / f"{step}.py"
-    
-    if step_config_py.exists():
-        step_config_path = step_config_py
-    elif step_config_unnumbered.exists():
-        step_config_path = step_config_unnumbered
-    else:
-        return None
-    
     try:
-        config = load_config_module(step_config_path)
-        context = {
-            "DATAPOOL_ROOT": str(datapool_root),
-            "ROOT_DIR": str(root_dir),
-        }
-        if pipeline_env and "MODEL_PREFIX" in pipeline_env:
-            context["MODEL_PREFIX"] = pipeline_env["MODEL_PREFIX"]
-        config = resolve_config_vars(config, context)
-        
-        # Determine output directory based on step type
-        if step == "tokenize_cpt":
-            output_prefix = config.get("OUTPUT_PREFIX")
-            if output_prefix:
-                return Path(output_prefix).parent
-        elif step == "tokenize_sft":
-            output_prefix = config.get("OUTPUT_PREFIX") or config.get("SFT_OUTPUT_PREFIX")
-            if output_prefix:
-                return Path(output_prefix).parent
-        elif step == "convert":
-            output_dir = config.get("OUTPUT_DIR") or config.get("HF_OUTPUT_DIR")
-            if output_dir:
-                return Path(output_dir)
-            # Default: datapool/model/hf
-            return datapool_root / "model" / "hf"
-        elif step == "eval":
-            output_dir = config.get("OUTPUT_DIR") or config.get("REPORT_DIR")
-            if output_dir:
-                return Path(output_dir)
-            # Default: datapool/reports
-            return datapool_root / "reports"
-        elif step == "udatasets":
-            output_dir = config.get("OUTPUT_DIR")
-            if output_dir:
-                return Path(output_dir)
-            # Default: datapool/data/processed
-            return datapool_root / "data" / "processed"
-    except Exception as e:
-        # If config loading fails, return None (will skip clearing)
+        config = _load_step_config(step_config_path, root_dir, datapool_root, pipeline_env)
+        return step_obj.get_output_dir(config, datapool_root)
+    except Exception:
         return None
-    
-    return None
+
+
+def _resolve_steps(pipeline_config: Dict[str, Any]) -> List[str]:
+    """
+    Resolve list of step names to run.
+    - If pipeline has STEPS (list or tuple), use it (order and repeats allowed).
+    - Else fall back to legacy: all_step_names() in order, filter by STEP_*_ENABLED=1.
+    """
+    steps_raw = pipeline_config.get("STEPS")
+    if steps_raw is not None and isinstance(steps_raw, (list, tuple)):
+        return [str(s) for s in steps_raw]
+    # Legacy: use default order, include only enabled
+    result = []
+    for name in all_step_names():
+        enabled_key = f"STEP_{name.upper().replace('-', '_')}_ENABLED"
+        if str(pipeline_config.get(enabled_key, "0")) == "1":
+            result.append(name)
+    return result
 
 
 def run_step(
     *,
     root_dir: Path,
     config_dir: Path,
-    step: str,
+    step_obj: Step,
+    step_index: int,
+    occurrence_index: int,
     pipeline_env: Dict[str, str],
     run_id: str,
     workdir: Path,
     log_dir: Path,
 ) -> None:
-    enabled_key = f"STEP_{step.upper()}_ENABLED"
-    enabled = pipeline_env.get(enabled_key, "0")
     dry_run = pipeline_env.get("DRY_RUN", "0")
+    step_name = step_obj.name
 
     def log(msg: str) -> None:
         ts = time.strftime("%F %T")
         print(f"[{ts}] {msg}")
 
-    if enabled != "1":
-        log(f"skip step={step} ({enabled_key}={enabled})")
-        return
-
-    if step not in STEP_NUM:
-        raise SystemExit(f"Unknown step: {step}")
-    
-    # All steps now use Python scripts only
-    step_script = root_dir / "scripts" / "steps" / f"{STEP_NUM[step]}.{step}.py"
-    
+    step_script = step_obj.script_path(root_dir)
     if not step_script.exists():
         raise SystemExit(f"Step script not found: {step_script}")
 
-    # Default: numbered step config (.py); fallback to unnumbered
-    # All steps now use Python config files (.py) only
-    step_config_py = config_dir / "steps" / f"{STEP_NUM[step]}.{step}.py"
-    step_config_unnumbered = config_dir / "steps" / f"{step}.py"
-    
-    if step_config_py.exists():
-        step_config_path = step_config_py
-    elif step_config_unnumbered.exists():
-        step_config_path = step_config_unnumbered
-    else:
-        step_config_path = step_config_py  # Will be passed but may not exist
-    
-    # Python scripts load config themselves
-    step_env = {}  # Python scripts load config themselves
+    step_config_path = step_obj.resolve_config_path(config_dir, occurrence_index)
 
     env = os.environ.copy()
     datapool_root = pipeline_env.get("DATAPOOL_ROOT", str(root_dir / "datapool"))
-    # Basic safety check: require datapool to be inside this repo by default.
-    # (User can override, but the default should keep data co-located.)
     try:
         repo_real = root_dir.resolve()
         dp_real = Path(datapool_root).expanduser().resolve()
@@ -227,6 +167,8 @@ def run_step(
             "ROOT_DIR": str(root_dir),
             "CONFIG_DIR": str(config_dir),
             "STEP_ENV_PATH": str(step_config_path),
+            "STEP_INDEX": str(step_index),
+            "STEP_OCCURRENCE_INDEX": str(occurrence_index),
             "RUN_ID": run_id,
             "WORKDIR": str(workdir),
             "LOG_DIR": str(log_dir),
@@ -234,7 +176,6 @@ def run_step(
             "DATAPOOL_ROOT": datapool_root,
         }
     )
-    # Pass pipeline config variables to steps (for BASE_MODEL_PATH, TOKENIZER_PATH, etc.)
     for key in [
         "BASE_MODEL_NAME", "BASE_MODEL_SRC", "BASE_MODEL_PATH",
         "TOKENIZER_PATH", "SFT_TOKENIZER_PATH",
@@ -242,20 +183,17 @@ def run_step(
     ]:
         if key in pipeline_env:
             env[key] = pipeline_env[key]
-    # Python scripts load config themselves, no need to update env
 
-    # Clear output directory before running the step
-    output_dir = get_step_output_dir(step, config_dir, root_dir, Path(datapool_root), pipeline_env)
+    output_dir = get_step_output_dir(step_obj, config_dir, root_dir, Path(datapool_root), pipeline_env, occurrence_index)
     if output_dir:
-        clear_output_directory(output_dir, step, dry_run=(dry_run == "1"))
+        clear_output_directory(output_dir, step_name, dry_run=(dry_run == "1"))
 
-    log(f"run step={step}")
+    log_name = f"{step_name}_{step_index}" if step_index > 0 else step_name
+    log(f"run step[{step_index}] {step_name}")
     if dry_run == "1":
         print(f"[dry-run] would run: {step_script}")
-        # still invoke the script in dry-run mode so it can print the planned command
-    
+
     cmd = ["python3", str(step_script)]
-    
     proc = subprocess.Popen(
         cmd,
         cwd=str(root_dir),
@@ -265,10 +203,11 @@ def run_step(
         text=True,
         bufsize=1,
     )
-    code = tee_process(proc, log_dir / f"{step}.log")
+    log_file = log_dir / f"{log_name}.log"
+    code = tee_process(proc, log_file)
     if code != 0:
-        raise SystemExit(f"step failed: {step} (exit={code}), see log: {log_dir / (step + '.log')}")
-    log(f"done step={step}")
+        raise SystemExit(f"step failed: {step_name} (exit={code}), see log: {log_file}")
+    log(f"done step[{step_index}] {step_name}")
 
 
 def main(argv: List[str] | None = None) -> int:
@@ -299,6 +238,8 @@ def main(argv: List[str] | None = None) -> int:
     from config import apply_env_imports, load_config_module, merge_env_defaults, resolve_config_vars
     pipeline_config = load_config_module(pipeline_config_path)
     merge_env_defaults(pipeline_config, os.environ)
+    # Resolve steps to run (from STEPS list or legacy STEP_*_ENABLED) before str() conversion
+    steps_to_run = _resolve_steps(pipeline_config)
     # First resolve DATAPOOL_ROOT to get the actual path
     temp_context = {}
     apply_env_imports(temp_context, os.environ)
@@ -339,11 +280,16 @@ def main(argv: List[str] | None = None) -> int:
         print(f"[{time.strftime('%F %T')}] prepare-only: done (no steps executed)")
         return 0
 
-    for step in STEP_ORDER:
+    for step_index, step_name in enumerate(steps_to_run):
+        step_obj = get_step(step_name)
+        # Occurrence index: 0 = first time this step type runs, 1 = second, ... (for config choice: convert_0.py, convert_1.py)
+        occurrence_index = steps_to_run[:step_index].count(step_name)
         run_step(
             root_dir=root_dir,
             config_dir=config_dir,
-            step=step,
+            step_obj=step_obj,
+            step_index=step_index,
+            occurrence_index=occurrence_index,
             pipeline_env=pipeline_env,
             run_id=run_id,
             workdir=workdir,
