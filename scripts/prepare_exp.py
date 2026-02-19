@@ -65,6 +65,48 @@ def _load_step_config(path: Path, *, root_dir: Path, datapool_root: Path) -> Dic
     return config_utils.resolve_config_vars(config, context)
 
 
+def _iter_tokenize_step_configs(steps_dir: Path, step_type: str) -> List[Path]:
+    """
+    Return all tokenize step config files for a step type.
+    Supports:
+    - tokenize_cpt.py / tokenize_sft.py
+    - tokenize_cpt_0.py / tokenize_sft_1.py
+    - legacy numbered forms like 2.tokenize_cpt.py, 3.tokenize_sft.py
+    """
+    if not steps_dir.exists():
+        return []
+
+    exact = step_type
+    indexed_prefix = f"{step_type}_"
+    legacy_suffix = f".{step_type}"
+    matched: List[Path] = []
+
+    for p in steps_dir.glob("*.py"):
+        stem = p.stem
+        if stem == exact or stem.startswith(indexed_prefix) or stem.endswith(legacy_suffix):
+            matched.append(p)
+
+    def sort_key(path: Path) -> tuple[int, int, str]:
+        stem = path.stem
+        if stem.endswith(legacy_suffix):
+            head = stem[: -len(legacy_suffix)]
+            if head.isdigit():
+                return (0, int(head), stem)
+            return (1, 0, stem)
+        if stem == exact:
+            return (2, 0, stem)
+        if stem.startswith(indexed_prefix):
+            tail = stem[len(indexed_prefix):]
+            if tail.isdigit():
+                return (3, int(tail), stem)
+            return (4, 0, stem)
+        return (5, 0, stem)
+
+    # Deduplicate while preserving deterministic order
+    unique = {p.resolve(): p for p in matched}
+    return sorted(unique.values(), key=sort_key)
+
+
 def prepare_from_env(
     *,
     pipeline_env: Dict[str, str],
@@ -98,20 +140,14 @@ def prepare_from_env(
     else:
         print(f"[{time.strftime('%F %T')}] base_model: skipped (BASE_MODEL_SRC not set)")
 
-    # Optional: copy CPT/SFT raw data from tokenize configs
+    # Optional: copy CPT/SFT raw data from all tokenize configs under steps/
     steps_dir = config_dir / "steps"
-    cpt_config_path = steps_dir / "2.tokenize_cpt.py"
-    if not cpt_config_path.exists():
-        cpt_config_path = steps_dir / "tokenize_cpt.py"
+    cpt_config_paths = _iter_tokenize_step_configs(steps_dir, "tokenize_cpt")
+    sft_config_paths = _iter_tokenize_step_configs(steps_dir, "tokenize_sft")
 
-    sft_config_path = steps_dir / "3.tokenize_sft.py"
-    if not sft_config_path.exists():
-        sft_config_path = steps_dir / "2.tokenize_sft.py"
-        if not sft_config_path.exists():
-            sft_config_path = steps_dir / "tokenize_sft.py"
-
-    # Copy CPT raw data
-    if cpt_config_path.exists():
+    if not cpt_config_paths:
+        print(f"[{time.strftime('%F %T')}] CPT_RAW_COPY_SRC: skipped (tokenize_cpt config not found)")
+    for cpt_config_path in cpt_config_paths:
         cpt_config = _load_step_config(cpt_config_path, root_dir=root_dir, datapool_root=datapool_root)
         copy_src = cpt_config.get("CPT_RAW_COPY_SRC", "").strip()
         if copy_src:
@@ -119,9 +155,15 @@ def prepare_from_env(
             if not src_dir.exists():
                 raise SystemExit(f"CPT_RAW_COPY_SRC not found: {src_dir}")
             dst_dir = datapool_root / "data" / "raw" / "cpt"
-            print(f"[{time.strftime('%F %T')}] CPT_RAW_COPY_SRC: {src_dir} -> {dst_dir} (mode={mode})")
+            print(
+                f"[{time.strftime('%F %T')}] CPT_RAW_COPY_SRC[{cpt_config_path.name}]: "
+                f"{src_dir} -> {dst_dir} (mode={mode})"
+            )
             copied, clashes = copy_jsonl_flat(src_dir, dst_dir)
-            print(f"[{time.strftime('%F %T')}] CPT_RAW_COPY_SRC: copied_jsonl={copied} clashes={len(clashes)}")
+            print(
+                f"[{time.strftime('%F %T')}] CPT_RAW_COPY_SRC[{cpt_config_path.name}]: "
+                f"copied_jsonl={copied} clashes={len(clashes)}"
+            )
             if clashes:
                 for x in clashes[:20]:
                     print(f"  [warn] skip (exists): {x}", file=sys.stderr)
@@ -129,11 +171,7 @@ def prepare_from_env(
                     print(f"  ... and {len(clashes) - 20} more", file=sys.stderr)
         else:
             print(f"[{time.strftime('%F %T')}] CPT_RAW_COPY_SRC: skipped (not set in {cpt_config_path.name})")
-    else:
-        print(f"[{time.strftime('%F %T')}] CPT_RAW_COPY_SRC: skipped (config not found)")
 
-    # Optional: merge + shuffle CPT jsonl
-    if cpt_config_path.exists():
         merge_jsonl = str(cpt_config.get("MERGE_JSONL", "1")) == "1"
         if merge_jsonl:
             input_path = cpt_config.get("INPUT_DATA_PATH", "").strip()
@@ -150,7 +188,10 @@ def prepare_from_env(
                 else:
                     required_keys = json_keys if isinstance(json_keys, list) else None
                 if merge_output.exists():
-                    print(f"[{time.strftime('%F %T')}] CPT merge_jsonl: skipped (exists) output={merge_output}")
+                    print(
+                        f"[{time.strftime('%F %T')}] CPT merge_jsonl[{cpt_config_path.name}]: "
+                        f"skipped (exists) output={merge_output}"
+                    )
                 else:
                     tokenize_utils.expand_input_pattern(
                         input_path,
@@ -162,12 +203,16 @@ def prepare_from_env(
                         shuffle_seed=int(shuffle_seed) if shuffle_seed else None,
                         shuffle_buffer=shuffle_buffer,
                     )
-                    print(f"[{time.strftime('%F %T')}] CPT merge_jsonl: output={merge_output} shuffle={shuffle_jsonl}")
+                    print(
+                        f"[{time.strftime('%F %T')}] CPT merge_jsonl[{cpt_config_path.name}]: "
+                        f"output={merge_output} shuffle={shuffle_jsonl}"
+                    )
             else:
-                print(f"[{time.strftime('%F %T')}] CPT merge_jsonl: skipped (missing INPUT_DATA_PATH)")
+                print(f"[{time.strftime('%F %T')}] CPT merge_jsonl: skipped (missing INPUT_DATA_PATH in {cpt_config_path.name})")
 
-    # Copy SFT raw data
-    if sft_config_path.exists():
+    if not sft_config_paths:
+        print(f"[{time.strftime('%F %T')}] SFT_RAW_COPY_SRC: skipped (tokenize_sft config not found)")
+    for sft_config_path in sft_config_paths:
         sft_config = _load_step_config(sft_config_path, root_dir=root_dir, datapool_root=datapool_root)
         copy_src = sft_config.get("SFT_RAW_COPY_SRC", "").strip()
         if copy_src:
@@ -175,9 +220,15 @@ def prepare_from_env(
             if not src_dir.exists():
                 raise SystemExit(f"SFT_RAW_COPY_SRC not found: {src_dir}")
             dst_dir = datapool_root / "data" / "raw" / "sft"
-            print(f"[{time.strftime('%F %T')}] SFT_RAW_COPY_SRC: {src_dir} -> {dst_dir} (mode={mode})")
+            print(
+                f"[{time.strftime('%F %T')}] SFT_RAW_COPY_SRC[{sft_config_path.name}]: "
+                f"{src_dir} -> {dst_dir} (mode={mode})"
+            )
             copied, clashes = copy_jsonl_flat(src_dir, dst_dir)
-            print(f"[{time.strftime('%F %T')}] SFT_RAW_COPY_SRC: copied_jsonl={copied} clashes={len(clashes)}")
+            print(
+                f"[{time.strftime('%F %T')}] SFT_RAW_COPY_SRC[{sft_config_path.name}]: "
+                f"copied_jsonl={copied} clashes={len(clashes)}"
+            )
             if clashes:
                 for x in clashes[:20]:
                     print(f"  [warn] skip (exists): {x}", file=sys.stderr)
@@ -185,11 +236,7 @@ def prepare_from_env(
                     print(f"  ... and {len(clashes) - 20} more", file=sys.stderr)
         else:
             print(f"[{time.strftime('%F %T')}] SFT_RAW_COPY_SRC: skipped (not set in {sft_config_path.name})")
-    else:
-        print(f"[{time.strftime('%F %T')}] SFT_RAW_COPY_SRC: skipped (config not found)")
 
-    # Optional: merge + shuffle SFT jsonl
-    if sft_config_path.exists():
         merge_jsonl = str(sft_config.get("MERGE_JSONL", "1")) == "1"
         if merge_jsonl:
             input_path = sft_config.get("INPUT_DATA_PATH") or sft_config.get("SFT_INPUT_DATA_PATH", "")
@@ -206,7 +253,10 @@ def prepare_from_env(
                 else:
                     required_keys = json_keys if isinstance(json_keys, list) else None
                 if merge_output.exists():
-                    print(f"[{time.strftime('%F %T')}] SFT merge_jsonl: skipped (exists) output={merge_output}")
+                    print(
+                        f"[{time.strftime('%F %T')}] SFT merge_jsonl[{sft_config_path.name}]: "
+                        f"skipped (exists) output={merge_output}"
+                    )
                 else:
                     tokenize_utils.expand_input_pattern(
                         input_path,
@@ -218,9 +268,12 @@ def prepare_from_env(
                         shuffle_seed=int(shuffle_seed) if shuffle_seed else None,
                         shuffle_buffer=shuffle_buffer,
                     )
-                    print(f"[{time.strftime('%F %T')}] SFT merge_jsonl: output={merge_output} shuffle={shuffle_jsonl}")
+                    print(
+                        f"[{time.strftime('%F %T')}] SFT merge_jsonl[{sft_config_path.name}]: "
+                        f"output={merge_output} shuffle={shuffle_jsonl}"
+                    )
             else:
-                print(f"[{time.strftime('%F %T')}] SFT merge_jsonl: skipped (missing INPUT_DATA_PATH)")
+                print(f"[{time.strftime('%F %T')}] SFT merge_jsonl: skipped (missing INPUT_DATA_PATH in {sft_config_path.name})")
 
     print(f"[{time.strftime('%F %T')}] prepare_exp done")
 

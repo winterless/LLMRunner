@@ -1,6 +1,6 @@
-# step7: MindSpeed SFT training (extern script)
-# EXTERN_SCRIPT: 直接运行可替代本 step 的全部逻辑
-EXTERN_SCRIPT = "echo 7.train sft"
+# step7: MindSpeed SFT training (script)
+# SCRIPT: 直接运行可替代本 step 的全部逻辑
+SCRIPT = "echo 7.train sft"
 
 # SFT train_config (exported as env for run_sft.sh)
 INPUT_MODEL_PATH = "${DATAPOOL_ROOT}/model/hf/ckpt_1000b"

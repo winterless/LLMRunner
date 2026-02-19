@@ -15,6 +15,14 @@ from config import load_config_module, resolve_config_vars, require_config, requ
 from step_utils import apply_pipeline_context, run_extern_script
 
 
+def _pick_first_existing_config(steps_dir: Path, candidates: list[str]) -> Path:
+    for name in candidates:
+        p = steps_dir / name
+        if p.exists():
+            return p
+    return steps_dir / candidates[-1]
+
+
 def main() -> int:
     # Get environment variables
     root_dir = Path(os.environ["ROOT_DIR"])
@@ -63,9 +71,10 @@ def main() -> int:
     sft_raw_copy_src = config.get("SFT_RAW_COPY_SRC")
     if not sft_raw_copy_src:
         # Try to load from tokenize_sft config
-        tokenize_sft_config = config_dir / "steps" / "3.tokenize_sft.py"
-        if not tokenize_sft_config.exists():
-            tokenize_sft_config = config_dir / "steps" / "2.tokenize_sft.py"
+        tokenize_sft_config = _pick_first_existing_config(
+            config_dir / "steps",
+            ["3.tokenize_sft.py", "2.tokenize_sft.py", "tokenize_sft_0.py", "tokenize_sft.py"],
+        )
         if tokenize_sft_config.exists():
             tokenize_config = load_config_module(tokenize_sft_config)
             tokenize_config = resolve_config_vars(tokenize_config, context)

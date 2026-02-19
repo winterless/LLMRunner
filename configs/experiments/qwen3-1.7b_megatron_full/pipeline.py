@@ -5,27 +5,20 @@ INCLUDE = "../../common/pipeline_megatron.py"
 DATAPOOL_ROOT = "${DATAPOOL}/experiments/qwen3-1.7b_megatron_full"
 DRY_RUN = 0
 
-# Pipeline: order and repeats are free (e.g. train_cpt, train_cpt, train_sft).
-# Omit STEPS to use legacy STEP_*_ENABLED with default order.
+# Pipeline uses explicit Step Instance entries:
+# - id: unique instance id (for logs/audit)
+# - type: step type capability
+# - config: optional per-instance config path (relative to config dir)
+#
+# This is the recommended form for modular, pluggable orchestration.
 STEPS = [
-    "tokenize_cpt",
-    "tokenize_sft",
-    "train_cpt",
-    "mg2hf",
-    "hf2mg",
-    "train_sft",
+    {"id": "tokenize_cpt_0", "type": "tokenize_cpt", "config": "steps/tokenize_cpt_0.py", "enabled": True},
+    {"id": "tokenize_sft_0", "type": "tokenize_sft", "config": "steps/tokenize_sft_0.py", "enabled": True},
+    {"id": "train_cpt_0", "type": "train_cpt", "config": "steps/train_cpt_0.py", "enabled": True},
+    {"id": "mg2hf_0", "type": "mg2hf", "config": "steps/mg2hf_0.py", "enabled": True},
+    {"id": "hf2mg_0", "type": "hf2mg", "config": "steps/hf2mg_0.py", "enabled": True},
+    {"id": "train_sft_0", "type": "train_sft", "config": "steps/train_sft_0.py", "enabled": True},
 ]
-
-# Legacy (ignored when STEPS is set)
-STEP_UDATASETS_ENABLED = 0
-STEP_TOKENIZE_CPT_ENABLED = 1
-STEP_TOKENIZE_SFT_ENABLED = 1
-STEP_TRAIN_CPT_ENABLED = 1
-STEP_MG2HF_ENABLED = 1
-STEP_HF2MG_ENABLED = 1
-STEP_TRAIN_SFT_ENABLED = 1
-STEP_CONVERT_ENABLED = 0
-STEP_EVAL_ENABLED = 0
 
 # Base model configuration (single source of truth)
 # BASE_MODEL_SRC: 原始模型路径，应直接指向包含 safetensors 的目录
@@ -40,4 +33,4 @@ BASE_MODEL_SRC = "/home/unlimitediw/workspace/models/Qwen3-1.7B"
 # Model prefix for naming tokenized outputs/checkpoints
 MODEL_PREFIX = "qwen3_1p7b"
 
-# Data copy: set CPT_RAW_COPY_SRC and SFT_RAW_COPY_SRC in steps/tokenize_cpt.py and steps/tokenize_sft.py when needed.
+# Data copy: set CPT_RAW_COPY_SRC and SFT_RAW_COPY_SRC in steps/tokenize_cpt_0.py and steps/tokenize_sft_0.py when needed.

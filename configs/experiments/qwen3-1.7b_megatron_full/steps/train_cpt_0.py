@@ -1,5 +1,6 @@
 # step4: NVIDIA CPT (e.g. Megatron-DeepSpeed pretrain_gpt.py)
 # RUN_WITH=cmd → run TRAIN_CMD (set below). RUN_WITH=entrypoint → run python ENTRYPOINT ARGS. No default.
+SCRIPT = "python3 ${ROOT_DIR}/scripts/steps/train_cpt.py"
 RUN_WITH = "cmd"
 MEGATRON = "${MEGATRON}"
 DATA_PATH = "${DATAPOOL_ROOT}/data/tokenized/cpt/${MODEL_PREFIX}_text_document"

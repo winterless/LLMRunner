@@ -3,6 +3,7 @@
 # 目标：从 CPT checkpoint 加载权重（--load），用 tokenize_sft 产物训练/验证最小闭环。
 # 注意：Megatron-LM 默认 --ckpt-format=torch_dist（会产出 .distcp）。
 # 这里显式指定 legacy：--ckpt-format torch（产出单个 .pt）。
+SCRIPT = "python3 ${ROOT_DIR}/scripts/steps/train_sft.py"
 RUN_WITH = "cmd"
 MEGATRON = "${MEGATRON}"
 

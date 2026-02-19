@@ -1,4 +1,5 @@
 # Second mg2hf in pipeline: full export (MG checkpoint → HF). RUN_WITH=cmd → CONVERT_CMD.
+SCRIPT = "python3 ${ROOT_DIR}/scripts/steps/mg2hf.py"
 RUN_WITH = "cmd"
 MEGATRON = "${MEGATRON}"
 IN_CKPT_DIR = "${DATAPOOL_ROOT}/model/sft_checkpoints"

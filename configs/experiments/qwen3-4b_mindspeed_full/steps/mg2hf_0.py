@@ -1,5 +1,5 @@
-# step5: MG -> HF size conversion (extern script)
-EXTERN_SCRIPT = "echo 1"
+# step5: MG -> HF size conversion (script)
+SCRIPT = "echo 1"
 MODEL_TYPE = "qwen3"
 
 BASE_MODEL_PATH = "${BASE_MODEL_SRC}"

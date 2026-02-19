@@ -5,15 +5,16 @@ INCLUDE = "../../common/pipeline_mindspeed.py"
 DATAPOOL_ROOT = "${DATAPOOL}/experiments/qwen3-4b_mindspeed_full"
 DRY_RUN = 1
 
-STEP_UDATASETS_ENABLED = 0
-STEP_TOKENIZE_CPT_ENABLED = 0
-STEP_TOKENIZE_SFT_ENABLED = 0
-STEP_TRAIN_CPT_ENABLED = 0
-STEP_MG2HF_ENABLED = 0
-STEP_HF2MG_ENABLED = 0
-STEP_TRAIN_SFT_ENABLED = 0
-STEP_CONVERT_ENABLED = 0
-STEP_EVAL_ENABLED = 0
+# Pipeline uses explicit Step Instance entries.
+# Keep current behavior (no execution) by setting enabled=False.
+STEPS = [
+    {"id": "tokenize_cpt_0", "type": "tokenize_cpt", "config": "steps/tokenize_cpt_0.py", "enabled": False},
+    {"id": "tokenize_sft_0", "type": "tokenize_sft", "config": "steps/tokenize_sft_0.py", "enabled": False},
+    {"id": "train_cpt_0", "type": "train_cpt", "config": "steps/train_cpt_0.py", "enabled": False},
+    {"id": "mg2hf_0", "type": "mg2hf", "config": "steps/mg2hf_0.py", "enabled": False},
+    {"id": "hf2mg_0", "type": "hf2mg", "config": "steps/hf2mg_0.py", "enabled": False},
+    {"id": "train_sft_0", "type": "train_sft", "config": "steps/train_sft_0.py", "enabled": False},
+]
 
 # Base model configuration (single source of truth)
 # BASE_MODEL_SRC: 原始模型路径，应直接指向包含 safetensors 的目录

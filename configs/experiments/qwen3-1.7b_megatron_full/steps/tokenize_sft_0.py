@@ -1,5 +1,6 @@
 # step2b: Megatron-LM preprocess_data.py → SFT tokenize → tokenized/sft/ (bin/idx)
 # Raw copy: SFT 源在下方，prepare_exp 会拷贝到 data/raw/sft
+SCRIPT = "python3 ${ROOT_DIR}/scripts/steps/tokenize_sft.py"
 SFT_RAW_COPY_SRC = "/home/unlimitediw/workspace/TYDeepResearch/UDatasets/out_for_LLRunner/sft_data"
 INPUT_DATA_PATH = "${DATAPOOL_ROOT}/data/raw/sft"
 OUTPUT_PREFIX = "${DATAPOOL_ROOT}/data/tokenized/sft/${MODEL_PREFIX}_sft_packed"

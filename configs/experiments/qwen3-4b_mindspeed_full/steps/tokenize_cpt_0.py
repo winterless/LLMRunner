@@ -1,4 +1,4 @@
-# step2: MindSpeed preprocess_data.py → CPT tokenize → tokenized/cpt/ (bin/idx)
+# step2: MindSpeed preprocess_data.py -> CPT tokenize -> tokenized/cpt/ (bin/idx)
 CPT_RAW_COPY_SRC = "/home/unlimitediw/workspace/TYDeepResearch/UDatasets/out/mixed/mymix/tmp"
 INPUT_DATA_PATH = "${DATAPOOL_ROOT}/data/raw/cpt"
 
@@ -8,4 +8,4 @@ SHUFFLE_JSONL = 1
 INPUT_DATA_FILE = "${DATAPOOL_ROOT}/data/raw/cpt/merged_input.jsonl"
 OUTPUT_DATA_PATH = "${DATAPOOL_ROOT}/data/tokenized/cpt"
 TOKENIZER_PATH = "${BASE_MODEL_PATH}"
-EXTERN_SCRIPT = "echo 2.tokenizer"
+SCRIPT = "echo 2.tokenizer"
