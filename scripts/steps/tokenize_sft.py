@@ -19,7 +19,6 @@ from tokenize_utils import expand_input_pattern, rewrite_sft_jsonl_to_input_labe
 def main() -> int:
     # Get environment variables
     root_dir = Path(os.environ["ROOT_DIR"])
-    config_dir = Path(os.environ.get("CONFIG_DIR", root_dir / "configs"))
     step_env_path = Path(os.environ.get("STEP_ENV_PATH", ""))
     datapool_root = Path(os.environ["DATAPOOL_ROOT"])
     dry_run = os.environ.get("DRY_RUN", "0") == "1"
@@ -30,15 +29,8 @@ def main() -> int:
         print(f"Missing config: STEP_ENV_PATH not set or file not found: {step_env_path}", file=sys.stderr)
         return 2
     
-    config_path = step_env_path
-    
-    # If it's a .env file, error - user should migrate to .py
-    if config_path.suffix == ".env":
-        print(f"tokenize_sft: .env files are deprecated, please migrate to .py config: {config_path}", file=sys.stderr)
-        return 2
-    
     # Load and resolve config
-    config = load_config_module(config_path)
+    config = load_config_module(step_env_path)
     merge_env_defaults(config, os.environ)
     context = {
         "DATAPOOL_ROOT": str(datapool_root),
@@ -64,23 +56,6 @@ def main() -> int:
     if not input_path:
         print("tokenize_sft: INPUT_DATA_PATH or SFT_INPUT_DATA_PATH is required", file=sys.stderr)
         return 2
-
-    # Optional: copy raw SFT data into datapool if source is configured
-    sft_raw_copy_src = config.get("SFT_RAW_COPY_SRC")
-    input_abs_path = resolve_path(input_path, root_dir)
-    if sft_raw_copy_src:
-        needs_copy = False
-        if not input_abs_path.exists():
-            needs_copy = True
-        elif input_abs_path.is_dir():
-            if not any(input_abs_path.glob("*.jsonl")):
-                needs_copy = True
-        if needs_copy:
-            print(f"tokenize_sft: copying raw SFT from {sft_raw_copy_src} -> {input_abs_path}")
-            if not dry_run:
-                sys.path.insert(0, str(root_dir / "scripts"))
-                from prepare_exp import copy_jsonl_flat
-                copy_jsonl_flat(Path(sft_raw_copy_src), input_abs_path)
     
     tokenizer_path = config.get("SFT_TOKENIZER_PATH") or config.get("TOKENIZER_PATH")
     if not tokenizer_path:
@@ -169,7 +144,7 @@ def main() -> int:
             # Check if SFT_RAW_COPY_SRC is configured
             sft_raw_copy_src = config.get("SFT_RAW_COPY_SRC")
             if sft_raw_copy_src:
-                print(f"tokenize_sft: Hint: Run 'python scripts/prepare_exp.py -c {step_env_path.parent.parent}/pipeline.env' to copy data from {sft_raw_copy_src}", file=sys.stderr)
+                print(f"tokenize_sft: Hint: Run 'python scripts/prepare_exp.py -c {step_env_path.parent.parent}/pipeline.py' to copy data from {sft_raw_copy_src}", file=sys.stderr)
             else:
                 print(f"tokenize_sft: Hint: Configure SFT_RAW_COPY_SRC in config and run 'prepare_exp' to copy data", file=sys.stderr)
             return 2
@@ -204,7 +179,7 @@ def main() -> int:
                 f"tokenize_sft: INPUT_DATA_PATH must be under DATAPOOL_ROOT ({datapool_abs}) but got: {input_check}",
                 file=sys.stderr,
             )
-            print("tokenize_sft: set ALLOW_EXTERNAL_PATHS=1 in pipeline.env to override", file=sys.stderr)
+            print("tokenize_sft: set ALLOW_EXTERNAL_PATHS=1 in pipeline.py to override", file=sys.stderr)
             return 2
         
         if not str(output_prefix_abs).startswith(str(datapool_abs) + "/"):
@@ -212,7 +187,7 @@ def main() -> int:
                 f"tokenize_sft: OUTPUT_PREFIX must be under DATAPOOL_ROOT ({datapool_abs}) but got: {output_prefix_abs}",
                 file=sys.stderr,
             )
-            print("tokenize_sft: set ALLOW_EXTERNAL_PATHS=1 in pipeline.env to override", file=sys.stderr)
+            print("tokenize_sft: set ALLOW_EXTERNAL_PATHS=1 in pipeline.py to override", file=sys.stderr)
             return 2
     
     # Build command

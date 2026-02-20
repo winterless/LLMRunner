@@ -1,14 +1,14 @@
 # Shared pipeline defaults (invariant across experiments)
 #
 # Pipeline steps: set STEPS to a list of step instances (recommended) or step names.
-# Step types: udatasets, tokenize_cpt, tokenize_sft, train_cpt, mg2hf, hf2mg, train_sft, eval.
+# Step types: tokenize_cpt, tokenize_sft, train_cpt, mg2hf, hf2mg, train_sft, eval.
 # Example (recommended):
 # STEPS = [
 #   {"id": "cpt_tok", "type": "tokenize_cpt"},
 #   {"id": "cpt_stage1", "type": "train_cpt", "config": "steps/cpt_stage1.py"},
 # ]
 # mg2hf/hf2mg are atomic; mg2hf can also do full export (CONVERT_CMD+copy) via config.
-# If STEPS is not set, legacy STEP_*_ENABLED=1 is used with default order.
+# STEPS is required and must be defined explicitly in pipeline.py.
 
 # RUN_ID only affects log subdir; outputs stay per-experiment.
 RUN_ID = ""

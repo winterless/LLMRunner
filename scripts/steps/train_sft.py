@@ -15,18 +15,9 @@ from config import load_config_module, resolve_config_vars, require_config, requ
 from step_utils import apply_pipeline_context, run_extern_script
 
 
-def _pick_first_existing_config(steps_dir: Path, candidates: list[str]) -> Path:
-    for name in candidates:
-        p = steps_dir / name
-        if p.exists():
-            return p
-    return steps_dir / candidates[-1]
-
-
 def main() -> int:
     # Get environment variables
     root_dir = Path(os.environ["ROOT_DIR"])
-    config_dir = Path(os.environ.get("CONFIG_DIR", root_dir / "configs"))
     step_env_path = Path(os.environ.get("STEP_ENV_PATH", ""))
     datapool_root = Path(os.environ["DATAPOOL_ROOT"])
     dry_run = os.environ.get("DRY_RUN", "0") == "1"
@@ -34,11 +25,6 @@ def main() -> int:
     # Load config - run.py already found the config file and passed it via STEP_ENV_PATH
     if not step_env_path or not step_env_path.exists():
         print(f"Missing config: STEP_ENV_PATH not set or file not found: {step_env_path}", file=sys.stderr)
-        return 2
-
-    # If it's a .env file, error - user should migrate to .py
-    if step_env_path.suffix == ".env":
-        print(f"train_sft: .env files are deprecated, please migrate to .py config: {step_env_path}", file=sys.stderr)
         return 2
 
     # Load and resolve config
@@ -67,28 +53,6 @@ def main() -> int:
     if extern_result is not None:
         return extern_result
 
-    # Get SFT_RAW_COPY_SRC from tokenize_sft config if needed
-    sft_raw_copy_src = config.get("SFT_RAW_COPY_SRC")
-    if not sft_raw_copy_src:
-        # Try to load from tokenize_sft config
-        tokenize_sft_config = _pick_first_existing_config(
-            config_dir / "steps",
-            ["3.tokenize_sft.py", "2.tokenize_sft.py", "tokenize_sft_0.py", "tokenize_sft.py"],
-        )
-        if tokenize_sft_config.exists():
-            tokenize_config = load_config_module(tokenize_sft_config)
-            tokenize_config = resolve_config_vars(tokenize_config, context)
-            sft_raw_copy_src = tokenize_config.get("SFT_RAW_COPY_SRC")
-
-    # If optional copy source set, copy *.jsonl into datapool raw/sft once
-    if sft_raw_copy_src:
-        print(f"train_sft: copying raw SFT from {sft_raw_copy_src} -> {datapool_root}/data/raw/sft")
-        if not dry_run:
-            # Import prepare_exp utilities
-            sys.path.insert(0, str(root_dir / "scripts"))
-            from prepare_exp import copy_jsonl_flat
-            copy_jsonl_flat(Path(sft_raw_copy_src), datapool_root / "data" / "raw" / "sft")
-
     # Extract required config
     run_with = config.get("RUN_WITH")
     if run_with not in ("cmd", "entrypoint"):
@@ -112,6 +76,10 @@ def main() -> int:
             else:
                 print("train_sft: RUN_WITH=cmd requires TRAIN_CMD in step config", file=sys.stderr)
                 return 2
+        # Replace variables in TRAIN_CMD using all config values
+        for key, value in config.items():
+            if isinstance(value, str):
+                train_cmd = train_cmd.replace(f"${{{key}}}", value)
     else:  # entrypoint
         entrypoint = require_config(config, "ENTRYPOINT", "train_sft")
         args = config.get("ARGS", "")
@@ -126,15 +94,37 @@ def main() -> int:
             print(f"[dry-run] (cd {trainer_dir} && python {entrypoint} {args})")
         return 0
 
-    # Execute
+    # Execute with real-time output
     try:
         if run_with == "cmd":
-            subprocess.run(train_cmd, shell=True, cwd=trainer_dir, env=env, check=True)
+            # Use Popen to get real-time output (unbuffered)
+            proc = subprocess.Popen(
+                train_cmd,
+                shell=True,
+                cwd=trainer_dir,
+                env=env,
+                stdout=sys.stdout,
+                stderr=sys.stderr,
+                bufsize=0,  # Unbuffered
+            )
+            return_code = proc.wait()
+            if return_code != 0:
+                raise subprocess.CalledProcessError(return_code, train_cmd)
         else:
-            cmd = ["python", entrypoint]
+            cmd = ["python", "-u", entrypoint]  # -u for unbuffered output
             if args:
                 cmd.extend(args.split())
-            subprocess.run(cmd, cwd=trainer_dir, env=env, check=True)
+            proc = subprocess.Popen(
+                cmd,
+                cwd=trainer_dir,
+                env=env,
+                stdout=sys.stdout,
+                stderr=sys.stderr,
+                bufsize=0,  # Unbuffered
+            )
+            return_code = proc.wait()
+            if return_code != 0:
+                raise subprocess.CalledProcessError(return_code, cmd)
     except subprocess.CalledProcessError as e:
         print(f"train_sft: failed with exit code {e.returncode}", file=sys.stderr)
         return e.returncode

@@ -1,5 +1,5 @@
 # step2: MindSpeed preprocess_data.py → sft tokenize → tokenized/sft/ (bin/idx)
-SFT_RAW_COPY_SRC = "/home/unlimitediw/workspace/TYDeepResearch/UDatasets/out/mixed/mymix/tmp"
+SFT_RAW_COPY_SRC = "/home/unlimitediw/workspace/TYDeepResearch/UDatasets/out_for_LLRunner/sft_data"
 INPUT_DATA_PATH = "${DATAPOOL_ROOT}/data/raw/sft"
 
 MERGE_JSONL = 1

@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 _scripts_dir = Path(__file__).resolve().parent
 if str(_scripts_dir) not in sys.path:
     sys.path.insert(0, str(_scripts_dir))
-from utils.step_registry import Step, get_step, all_step_names
+from utils.step_registry import Step, get_step
 
 
 @dataclass(frozen=True)
@@ -35,10 +35,6 @@ class StepInstance:
     config_ref: Optional[str]
     position: int
     occurrence_index: int
-
-
-def now_run_id() -> str:
-    return time.strftime("%Y%m%d-%H%M%S")
 
 
 def tee_process(proc: subprocess.Popen, log_path: Path) -> int:
@@ -169,91 +165,73 @@ def _canonical_instance_id(step_type: str, occurrence_index: int) -> str:
 def _resolve_steps(pipeline_config: Dict[str, Any]) -> List[StepInstance]:
     """
     Resolve list of step instances to run.
-    - If pipeline has STEPS (list/tuple), supports:
+    - Pipeline must define STEPS (list/tuple).
+    - Supports:
       1) string entries: ["train_cpt", "train_cpt", ...]
-      2) object entries: [{"id":"cpt_stage1","type":"train_cpt","config":"steps/cpt_stage1.py"}, ...]
-    - Else fall back to legacy: all_step_names() in order, filter by STEP_*_ENABLED=1.
+      2) object entries: [{"id":"train_cpt_0","type":"train_cpt","config":"steps/train_cpt_0.py"}, ...]
     """
     steps_raw = pipeline_config.get("STEPS")
-    if steps_raw is not None:
-        if not isinstance(steps_raw, (list, tuple)):
-            raise SystemExit("STEPS must be a list/tuple")
+    if steps_raw is None:
+        raise SystemExit("Pipeline must define STEPS explicitly; STEP_*_ENABLED fallback has been removed")
+    if not isinstance(steps_raw, (list, tuple)):
+        raise SystemExit("STEPS must be a list/tuple")
 
-        seen_counts: Dict[str, int] = {}
-        instances: List[StepInstance] = []
-        used_ids: set[str] = set()
-
-        for idx, raw in enumerate(steps_raw):
-            enabled = True
-            config_ref: Optional[str] = None
-
-            if isinstance(raw, str):
-                step_type = raw
-                explicit_id: Optional[str] = None
-            elif isinstance(raw, dict):
-                item = _normalize_instance_dict(dict(raw), idx)
-                step_type = str(item["type"])
-                explicit_id = str(item["id"]) if item.get("id") is not None else None
-                config_ref = str(item["config"]) if item.get("config") is not None else None
-                if "enabled" in item:
-                    enabled = _parse_enabled(item["enabled"])
-            else:
-                raise SystemExit(f"Unsupported STEPS[{idx}] entry type: {type(raw).__name__}")
-
-            if not enabled:
-                continue
-
-            occurrence_index = seen_counts.get(step_type, 0)
-            seen_counts[step_type] = occurrence_index + 1
-            canonical_id = _canonical_instance_id(step_type, occurrence_index)
-            if explicit_id is None:
-                instance_id = canonical_id
-            else:
-                instance_id = explicit_id
-                if instance_id != canonical_id:
-                    raise SystemExit(
-                        f"Invalid STEPS[{idx}].id={instance_id!r}; expected {canonical_id!r} "
-                        f"for type={step_type!r} occurrence={occurrence_index}"
-                    )
-            if config_ref and Path(config_ref).stem != instance_id:
-                raise SystemExit(
-                    f"Invalid STEPS[{idx}].config={config_ref!r}; filename stem must equal id={instance_id!r}"
-                )
-
-            if instance_id in used_ids:
-                raise SystemExit(f"Duplicate step instance id in STEPS: {instance_id!r}")
-            used_ids.add(instance_id)
-
-            instances.append(
-                StepInstance(
-                    step_type=step_type,
-                    instance_id=instance_id,
-                    config_ref=config_ref,
-                    position=len(instances),
-                    occurrence_index=occurrence_index,
-                )
-            )
-
-        return instances
-    # Legacy: use default order, include only enabled
-    result: List[StepInstance] = []
     seen_counts: Dict[str, int] = {}
-    for name in all_step_names():
-        enabled_key = f"STEP_{name.upper().replace('-', '_')}_ENABLED"
-        if str(pipeline_config.get(enabled_key, "0")) == "1":
-            occurrence_index = seen_counts.get(name, 0)
-            seen_counts[name] = occurrence_index + 1
-            instance_id = f"{name}_{occurrence_index}"
-            result.append(
-                StepInstance(
-                    step_type=name,
-                    instance_id=instance_id,
-                    config_ref=None,
-                    position=len(result),
-                    occurrence_index=occurrence_index,
+    instances: List[StepInstance] = []
+    used_ids: set[str] = set()
+
+    for idx, raw in enumerate(steps_raw):
+        enabled = True
+        config_ref: Optional[str] = None
+
+        if isinstance(raw, str):
+            step_type = raw
+            explicit_id: Optional[str] = None
+        elif isinstance(raw, dict):
+            item = _normalize_instance_dict(dict(raw), idx)
+            step_type = str(item["type"])
+            explicit_id = str(item["id"]) if item.get("id") is not None else None
+            config_ref = str(item["config"]) if item.get("config") is not None else None
+            if "enabled" in item:
+                enabled = _parse_enabled(item["enabled"])
+        else:
+            raise SystemExit(f"Unsupported STEPS[{idx}] entry type: {type(raw).__name__}")
+
+        if not enabled:
+            continue
+
+        occurrence_index = seen_counts.get(step_type, 0)
+        seen_counts[step_type] = occurrence_index + 1
+        canonical_id = _canonical_instance_id(step_type, occurrence_index)
+        if explicit_id is None:
+            instance_id = canonical_id
+        else:
+            instance_id = explicit_id
+            if instance_id != canonical_id:
+                raise SystemExit(
+                    f"Invalid STEPS[{idx}].id={instance_id!r}; expected {canonical_id!r} "
+                    f"for type={step_type!r} occurrence={occurrence_index}"
                 )
+        if config_ref and Path(config_ref).stem != instance_id:
+            raise SystemExit(
+                f"Invalid STEPS[{idx}].config={config_ref!r}; filename stem must equal id={instance_id!r}"
             )
-    return result
+
+        if instance_id in used_ids:
+            raise SystemExit(f"Duplicate step instance id in STEPS: {instance_id!r}")
+        used_ids.add(instance_id)
+
+        instances.append(
+            StepInstance(
+                step_type=step_type,
+                instance_id=instance_id,
+                config_ref=config_ref,
+                position=len(instances),
+                occurrence_index=occurrence_index,
+            )
+        )
+
+    return instances
 
 
 def resolve_step_config_path(step_obj: Step, step_instance: StepInstance, config_dir: Path) -> Path:
@@ -389,7 +367,7 @@ def run_step(
 
 def main(argv: List[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python scripts/run.py")
-    ap.add_argument("-c", "--config", required=True, help="Path to pipeline.py or pipeline.env")
+    ap.add_argument("-c", "--config", required=True, help="Path to pipeline.py")
     ap.add_argument(
         "--prepare-only",
         action="store_true",
@@ -404,7 +382,7 @@ def main(argv: List[str] | None = None) -> int:
     if not pipeline_config_path.exists():
         raise SystemExit(f"Config not found: {pipeline_config_path}")
 
-    # Convention: a config root is the directory containing pipeline.env or pipeline.py.
+    # Convention: a config root is the directory containing pipeline.py.
     # It must contain steps/<step>.py alongside pipeline config.
     config_dir = pipeline_config_path.parent
 
@@ -414,7 +392,7 @@ def main(argv: List[str] | None = None) -> int:
     from utils.config import apply_env_imports, load_config_module, merge_env_defaults, resolve_config_vars
     pipeline_config = load_config_module(pipeline_config_path)
     merge_env_defaults(pipeline_config, os.environ)
-    # Resolve steps to run (from STEPS list or legacy STEP_*_ENABLED) before str() conversion
+    # Resolve steps to run from explicit STEPS before str() conversion
     steps_to_run = _resolve_steps(pipeline_config)
     # First resolve DATAPOOL_ROOT to get the actual path
     temp_context = {}
@@ -436,7 +414,6 @@ def main(argv: List[str] | None = None) -> int:
         pipeline_env=pipeline_env,
         config_dir=config_dir,
         root_dir=root_dir,
-        mode="copy",
     )
 
     # 产出路径按实验唯一，不再用 RUN_ID 分层；run_id 仅用于日志目录（默认 "run"）

@@ -1,119 +1,96 @@
 # LLMRunner
 
-最小化的 LLM 训练流水线运行管理器。
+LLMRunner 是一个以 `pipeline.py` 为中心的最小训练编排器，负责：
 
-## 快速开始
+- 准备实验目录和数据（`prepare_exp.py`）
+- 按 `STEPS` 执行 step 实例（`run.py`）
+- 统一把 step 配置解析为环境变量并执行 `SCRIPT`
+
+## 简要设计思路
+
+- **显式实例化编排**：`pipeline.py` 必须定义 `STEPS`，每个实例用 `id/type/config/enabled` 描述。
+- **单一 prepare 归口**：raw 数据 copy/merge 只在 `scripts/prepare_exp.py` 处理。
+- **实例命名约束**：step config 采用 `<step_type>_<idx>.py`（例如 `tokenize_cpt_0.py`）。
+
+## 代码框架介绍
+
+### 核心入口
+
+- `scripts/run.py`
+  - 读取 `pipeline.py`
+  - 解析并校验 `STEPS`
+  - 调用 `prepare_exp.prepare_from_env(...)`
+  - 逐个执行启用的 step 实例
+- `scripts/prepare_exp.py`
+  - 创建 datapool 目录
+  - 拷贝 base model
+  - 扫描 `steps/tokenize_cpt_<idx>.py`、`steps/tokenize_sft_<idx>.py`
+  - 执行 raw copy 与 merge/shuffle
+
+### Step 脚本
+
+- 路径：`scripts/steps/*.py`
+- step 类型：`tokenize_cpt`, `tokenize_sft`, `train_cpt`, `mg2hf`, `hf2mg`, `train_sft`, `eval`
+- 每个实例通过环境变量接收配置（如 `STEP_ENV_PATH`, `DATAPOOL_ROOT`, `MODEL_PREFIX` 等）
+
+### 配置结构
+
+- 实验配置：`configs/experiments/<experiment>/pipeline.py`
+- step 配置：`configs/experiments/<experiment>/steps/<step_type>_<idx>.py`
+
+## 最简执行命令
 
 ```bash
-# 1. 准备实验环境（创建 datapool 目录，拷贝 base 模型和原始数据）
-python3 scripts/prepare_exp.py -c configs/experiments/<实验名>/pipeline.py
+# 1) 预处理（准备 datapool、base 模型、raw copy/merge）
+python3 scripts/prepare_exp.py -c configs/experiments/<experiment>/pipeline.py
 
-# 2. 运行流水线
-python3 scripts/run.py -c configs/experiments/<实验名>/pipeline.py
+# 2) 运行 pipeline（内部仍会调用 prepare）
+python3 scripts/run.py -c configs/experiments/<experiment>/pipeline.py
 ```
 
-或者使用便捷脚本：
+可选：
 
 ```bash
-./run.sh [config_path]
+# 只做 prepare，不执行 steps
+python3 scripts/run.py -c configs/experiments/<experiment>/pipeline.py --prepare-only
 ```
 
-### 创建新实验
+## 参数介绍
 
-```bash
-# 仅复制配置
-python3 scripts/prepare_exp.py --clone-experiment qwen3-4b_nvidia_full my_new_exp
+### `scripts/run.py`
 
-# 复制配置并复制 datapool（数据、模型、报告）
-python3 scripts/prepare_exp.py --clone-experiment qwen3-4b_nvidia_full my_new_exp --copy-datapool
-```
+- `-c, --config`：必填，`pipeline.py` 路径
+- `--prepare-only`：只执行 prepare，跳过 step 执行
 
-## 流水线步骤
+### `scripts/prepare_exp.py`
 
-1. **udatasets**: 数据增强、schema 校验、去重清洗
-2. **tokenize_cpt**: CPT 数据 tokenization（生成 `.bin`/`.idx`）
-3. **tokenize_sft**: SFT 数据 tokenization（生成 `.bin`/`.idx`）
-4. **train_cpt**: CPT 预训练
-5. **mg2hf**: MG→HF（原子：EXTERN_SCRIPT；或完整导出：CONVERT_CMD + COPY_HF_*）
-6. **hf2mg**: HF→MG（原子，EXTERN_SCRIPT）
-7. **train_sft**: SFT 微调
-8. **eval**: 模型评测
+- `-c, --config`：`pipeline.py` 路径（默认模式）
 
-通过 `pipeline.py` 中的 `STEP_*_ENABLED = 1/0` 控制各步骤的启用。
+## `STEPS` 约束（与实现一致）
 
-当前流水线提供 tokenize、train_cpt、train_sft、转换等标准形式，后续计划支持可插拔式步骤编排。
-
-## 配置系统
-
-- **流水线配置**: `configs/experiments/<实验名>/pipeline.py` - Python 配置文件，控制步骤启用/禁用和模型路径
-- **步骤配置**: `configs/experiments/<实验名>/steps/<N>.<step>.py` - Python 配置文件
-
-### 模型路径配置
-
-模型路径配置统一在 `pipeline.py` 中管理（单一数据源）：
+`pipeline.py` 示例：
 
 ```python
-# BASE_MODEL_SRC: 原始模型路径，应直接指向包含 safetensors 的目录
-BASE_MODEL_SRC = "/path/to/model/directory"
-
-# BASE_MODEL_NAME: 模型名称（用于 datapool 中的目录名）
-BASE_MODEL_NAME = "Qwen3-1.7B"
-
-# BASE_MODEL_PATH: 实际模型在 datapool 中的路径（自动派生）
-# prepare_exp 会将 BASE_MODEL_SRC 复制到 ${DATAPOOL_ROOT}/model/base/${BASE_MODEL_NAME}
-BASE_MODEL_PATH = "${DATAPOOL_ROOT}/model/base/${BASE_MODEL_NAME}"
+STEPS = [
+    {"id": "tokenize_cpt_0", "type": "tokenize_cpt", "config": "steps/tokenize_cpt_0.py", "enabled": True},
+    {"id": "train_cpt_0", "type": "train_cpt", "config": "steps/train_cpt_0.py", "enabled": True},
+]
 ```
 
-配置支持变量替换（如 `${DATAPOOL_ROOT}`, `${BASE_MODEL_PATH}`），详见 `scripts/utils/config.py`。
+约束：
 
-## 数据目录结构
+- `id` 必须是 `type_idx`（例如 `train_cpt_0`, `train_cpt_1`）
+- 若设置 `config`，文件名 stem 必须等于 `id`
+- `enabled=False` 仅影响 step 执行，不影响 prepare
 
-产出路径按**实验唯一**（无 RUN_ID 分层），详见 `datapool/README.md`：
+## 数据目录约定
 
+每个实验独立写入：
+
+```text
+datapool/experiments/<experiment>/
+  data/raw/{cpt,sft}
+  data/tokenized/{cpt,sft}
+  model/{base,cpt_checkpoints,sft_checkpoints,hf}
+  reports
 ```
-datapool/experiments/<实验名>/
-├── data/
-│   ├── raw/          # 原始数据（jsonl）
-│   │   ├── cpt/      # CPT 数据
-│   │   └── sft/      # SFT 数据
-│   ├── processed/    # UDatasets 处理后数据（step1 udatasets 输出）
-│   └── tokenized/    # Tokenize 输出
-│       ├── cpt/      # CPT .bin/.idx
-│       └── sft/      # SFT .bin/.idx
-├── model/
-│   ├── base/              # Base 模型（prepare_exp 拷贝）
-│   ├── cpt_checkpoints/  # CPT checkpoint
-│   ├── sft_checkpoints/  # SFT checkpoint
-│   └── hf/               # Convert 输出（HF 格式）
-└── reports/              # Eval 输出
-```
-
-## 特性
-
-- ✅ **自动清空输出目录**: 每次运行前自动清空步骤输出目录，避免旧文件残留
-- ✅ **Python 优先**: 所有步骤脚本和配置均为 Python，更易维护
-- ✅ **实验隔离**: 每个实验独立的 datapool，便于对照实验
-- ✅ **灵活配置**: 支持变量替换、条件启用步骤
-- ✅ **统一模型路径**: 模型路径配置集中在 `pipeline.py`，单一数据源
-
-## 文档
-
-- **架构设计**: `architecture.md`
-- **流程图**: `LLMRunner1.drawio`
-- **数据目录说明**: `datapool/README.md`
-
-
-## 世界知识
-
-- **1. 大模型搜寻世界知识** 
-    gemini, gpt等强大模型搜索世界数据，从huggingface，github等来源获取数据集
-- **2. 数据集切片分析**
-    数据集如agent data collection的随机采样信息，喂给AI Coder (Cursor, Trae等)，分析出数据特征，设计出对于的数据adapter（详见UDataset adapter模块）；这一步也会拿一些论文的先验指导
-- **3. UDataset数据处理**
-    数据集喂给UDataset清洗，然后Adapter进行数据重构
-- **4. 模型数据训练与评测**
-    数据喂给LLMRunner完成端到端训练与评测，记录评测结果
-- **5. 结果反馈**
-    增益数据归档，增益与负向数据分别总结&抽样喂给（1）搜索大模型-优化搜索过程 （2）AI Coder-优化adapter。并泛化宗教界
-- **备注** 
-    流程完全自动化，可并行；低原始数据要求（无格式要求）；增量评测集提升数据泛化读

@@ -8,12 +8,11 @@ DRY_RUN = 1
 # Pipeline uses explicit Step Instance entries.
 # Keep current behavior (no execution) by setting enabled=False.
 STEPS = [
-    {"id": "tokenize_cpt_0", "type": "tokenize_cpt", "config": "steps/tokenize_cpt_0.py", "enabled": False},
-    {"id": "tokenize_sft_0", "type": "tokenize_sft", "config": "steps/tokenize_sft_0.py", "enabled": False},
-    {"id": "train_cpt_0", "type": "train_cpt", "config": "steps/train_cpt_0.py", "enabled": False},
-    {"id": "mg2hf_0", "type": "mg2hf", "config": "steps/mg2hf_0.py", "enabled": False},
-    {"id": "hf2mg_0", "type": "hf2mg", "config": "steps/hf2mg_0.py", "enabled": False},
-    {"id": "train_sft_0", "type": "train_sft", "config": "steps/train_sft_0.py", "enabled": False},
+    {"id": "tokenize_cpt_0", "type": "tokenize_cpt", "config": "steps/tokenize_cpt_0.py", "enabled": True},
+    {"id": "tokenize_sft_0", "type": "tokenize_sft", "config": "steps/tokenize_sft_0.py", "enabled": True},
+    {"id": "train_cpt_0", "type": "train_cpt", "config": "steps/train_cpt_0.py", "enabled": True},
+    {"id": "train_sft_0", "type": "train_sft", "config": "steps/train_sft_0.py", "enabled": True},
+    {"id": "mg2hf_0", "type": "mg2hf", "config": "steps/mg2hf_0.py", "enabled": True}
 ]
 
 # Base model configuration (single source of truth)

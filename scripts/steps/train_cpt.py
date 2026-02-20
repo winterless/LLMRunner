@@ -26,11 +26,6 @@ def main() -> int:
         print(f"Missing config: STEP_ENV_PATH not set or file not found: {step_env_path}", file=sys.stderr)
         return 2
     
-    # If it's a .env file, error - user should migrate to .py
-    if step_env_path.suffix == ".env":
-        print(f"train_cpt: .env files are deprecated, please migrate to .py config: {step_env_path}", file=sys.stderr)
-        return 2
-    
     # Load and resolve config
     config = load_config_module(step_env_path)
     datapool_root = Path(os.environ.get("DATAPOOL_ROOT", str(root_dir / "datapool")))

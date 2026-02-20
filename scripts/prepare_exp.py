@@ -31,7 +31,6 @@ _tu_spec.loader.exec_module(tokenize_utils)
 def ensure_datapool_structure(datapool_root: Path) -> None:
     for p in [
         datapool_root / "data" / "raw",
-        datapool_root / "data" / "processed",
         datapool_root / "data" / "tokenized",
         datapool_root / "model" / "cpt_checkpoints",
         datapool_root / "model" / "sft_checkpoints",
@@ -68,39 +67,25 @@ def _load_step_config(path: Path, *, root_dir: Path, datapool_root: Path) -> Dic
 def _iter_tokenize_step_configs(steps_dir: Path, step_type: str) -> List[Path]:
     """
     Return all tokenize step config files for a step type.
-    Supports:
-    - tokenize_cpt.py / tokenize_sft.py
-    - tokenize_cpt_0.py / tokenize_sft_1.py
-    - legacy numbered forms like 2.tokenize_cpt.py, 3.tokenize_sft.py
+    Only instance-style naming is supported: <step_type>_<idx>.py
+    Examples: tokenize_cpt_0.py, tokenize_sft_1.py
     """
     if not steps_dir.exists():
         return []
 
-    exact = step_type
     indexed_prefix = f"{step_type}_"
-    legacy_suffix = f".{step_type}"
     matched: List[Path] = []
 
-    for p in steps_dir.glob("*.py"):
+    for p in steps_dir.glob(f"{step_type}_*.py"):
         stem = p.stem
-        if stem == exact or stem.startswith(indexed_prefix) or stem.endswith(legacy_suffix):
+        tail = stem[len(indexed_prefix):] if stem.startswith(indexed_prefix) else ""
+        if tail.isdigit():
             matched.append(p)
 
-    def sort_key(path: Path) -> tuple[int, int, str]:
+    def sort_key(path: Path) -> tuple[int, str]:
         stem = path.stem
-        if stem.endswith(legacy_suffix):
-            head = stem[: -len(legacy_suffix)]
-            if head.isdigit():
-                return (0, int(head), stem)
-            return (1, 0, stem)
-        if stem == exact:
-            return (2, 0, stem)
-        if stem.startswith(indexed_prefix):
-            tail = stem[len(indexed_prefix):]
-            if tail.isdigit():
-                return (3, int(tail), stem)
-            return (4, 0, stem)
-        return (5, 0, stem)
+        tail = stem[len(indexed_prefix):]
+        return (int(tail), stem)
 
     # Deduplicate while preserving deterministic order
     unique = {p.resolve(): p for p in matched}
@@ -112,7 +97,6 @@ def prepare_from_env(
     pipeline_env: Dict[str, str],
     config_dir: Path,
     root_dir: Path,
-    mode: str = "copy",
 ) -> None:
     dp = pipeline_env.get("DATAPOOL_ROOT") or "datapool"
     datapool_root = _resolve_path(dp, root_dir)
@@ -128,15 +112,13 @@ def prepare_from_env(
     if base_model_src:
         src = _resolve_path(base_model_src, root_dir)
         dst = datapool_root / "model" / "base" / base_model_name
-        print(f"[{time.strftime('%F %T')}] base_model: {src} -> {dst} (mode={mode})")
+        print(f"[{time.strftime('%F %T')}] base_model: {src} -> {dst} (mode=copy)")
         if not src.exists():
             raise SystemExit(f"BASE_MODEL_SRC not found: {src}")
         if dst.exists():
             print(f"[{time.strftime('%F %T')}] base_model: exists, skip -> {dst}")
-        elif mode == "copy":
-            shutil.copytree(src, dst)
         else:
-            copytree_link_fallback(src, dst)
+            shutil.copytree(src, dst)
     else:
         print(f"[{time.strftime('%F %T')}] base_model: skipped (BASE_MODEL_SRC not set)")
 
@@ -157,7 +139,7 @@ def prepare_from_env(
             dst_dir = datapool_root / "data" / "raw" / "cpt"
             print(
                 f"[{time.strftime('%F %T')}] CPT_RAW_COPY_SRC[{cpt_config_path.name}]: "
-                f"{src_dir} -> {dst_dir} (mode={mode})"
+                f"{src_dir} -> {dst_dir} (mode=copy)"
             )
             copied, clashes = copy_jsonl_flat(src_dir, dst_dir)
             print(
@@ -222,7 +204,7 @@ def prepare_from_env(
             dst_dir = datapool_root / "data" / "raw" / "sft"
             print(
                 f"[{time.strftime('%F %T')}] SFT_RAW_COPY_SRC[{sft_config_path.name}]: "
-                f"{src_dir} -> {dst_dir} (mode={mode})"
+                f"{src_dir} -> {dst_dir} (mode=copy)"
             )
             copied, clashes = copy_jsonl_flat(src_dir, dst_dir)
             print(
@@ -288,13 +270,6 @@ def _copy_or_link_file(src: str, dst: str) -> None:
         shutil.copy2(src, dst)
 
 
-def copytree_link_fallback(src: Path, dst: Path) -> None:
-    if dst.exists():
-        # keep behavior simple & safe: refuse to clobber
-        raise SystemExit(f"destination already exists: {dst}")
-    shutil.copytree(src, dst, copy_function=_copy_or_link_file)
-
-
 def iter_jsonl_files_recursive(src_dir: Path) -> Iterable[Path]:
     for p in src_dir.rglob("*.jsonl"):
         if p.is_file():
@@ -319,109 +294,10 @@ def copy_jsonl_flat(src_dir: Path, dst_dir: Path) -> Tuple[int, List[str]]:
     return copied, clashes
 
 
-def clone_experiment(
-    root_dir: Path,
-    source_name: str,
-    new_name: str,
-    copy_datapool: bool,
-) -> None:
-    """复制实验：config、并可选复制 datapool（数据/模型等）。"""
-    experiments = root_dir / "configs" / "experiments"
-    source_dir = experiments / source_name
-    new_dir = experiments / new_name
-    if not source_dir.is_dir():
-        raise SystemExit(f"Source experiment not found: {source_dir}")
-    if new_dir.exists():
-        raise SystemExit(f"Destination already exists: {new_dir}")
-
-    # 复制整份 config（含 pipeline.env 与 steps/*.env）
-    shutil.copytree(source_dir, new_dir)
-    print(f"[{time.strftime('%F %T')}] cloned config: {source_dir.name} -> {new_name}")
-
-    # 推断源/新 datapool 路径（与 pipeline.env 约定一致）
-    source_dp = f"datapool/experiments/{source_name}"
-    new_dp = f"datapool/experiments/{new_name}"
-    source_dp_abs = (root_dir / source_dp).resolve()
-    new_dp_abs = (root_dir / new_dp).resolve()
-
-    # 把所有 .env 里的源 datapool 路径改成新的
-    for env_path in new_dir.rglob("*.env"):
-        text = env_path.read_text(encoding="utf-8")
-        if source_dp in text:
-            new_text = text.replace(source_dp, new_dp)
-            env_path.write_text(new_text, encoding="utf-8")
-            print(f"[{time.strftime('%F %T')}] updated {env_path.relative_to(new_dir)}")
-
-    ensure_datapool_structure(new_dp_abs)
-
-    if copy_datapool and source_dp_abs.is_dir():
-        # 复制 data/、model/（含 base、cpt_checkpoints、sft_checkpoints、hf）、reports/
-        for sub in ("data", "model", "reports"):
-            src_sub = source_dp_abs / sub
-            dst_sub = new_dp_abs / sub
-            if not src_sub.is_dir():
-                continue
-            if dst_sub.exists():
-                print(f"[{time.strftime('%F %T')}] skip (exists): {dst_sub}")
-                continue
-            shutil.copytree(src_sub, dst_sub, copy_function=_copy_or_link_file)
-            print(f"[{time.strftime('%F %T')}] copied datapool: {sub}/ -> {new_dp}/{sub}/")
-    elif copy_datapool:
-        print(f"[{time.strftime('%F %T')}] source datapool missing, skipped copy: {source_dp_abs}")
-
-    print(f"[{time.strftime('%F %T')}] clone-experiment done. New config: configs/experiments/{new_name}/pipeline.env")
-
-
 def main(argv: List[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python scripts/prepare_exp.py")
-    ap.add_argument("-c", "--config", help="Path to pipeline.env (required unless --copy-jsonl or --clone-experiment)")
-    ap.add_argument(
-        "--copy-jsonl",
-        nargs=2,
-        metavar=("SRC_DIR", "DST_DIR"),
-        help="Copy *.jsonl from SRC_DIR to DST_DIR (flat); then exit. Use from step scripts when COPY_SRC is set.",
-    )
-    ap.add_argument(
-        "--clone-experiment",
-        nargs=2,
-        metavar=("SOURCE_EXP", "NEW_EXP"),
-        help="Create new experiment by copying SOURCE_EXP config (and optionally datapool). SOURCE_EXP/NEW_EXP are dir names under configs/experiments/.",
-    )
-    ap.add_argument(
-        "--copy-datapool",
-        action="store_true",
-        help="With --clone-experiment: also copy source experiment datapool (data/, model/, reports/) to new experiment.",
-    )
-    ap.add_argument(
-        "--mode",
-        choices=["link", "copy"],
-        default="link",
-        help="For -c: base model mode; for --copy-jsonl: link or copy (default link)",
-    )
+    ap.add_argument("-c", "--config", required=True, help="Path to pipeline.py")
     args = ap.parse_args(argv)
-
-    if args.clone_experiment:
-        root_dir = Path(__file__).resolve().parent.parent
-        clone_experiment(root_dir, args.clone_experiment[0], args.clone_experiment[1], args.copy_datapool)
-        return 0
-
-    if args.copy_jsonl:
-        src_dir = Path(args.copy_jsonl[0]).expanduser().resolve()
-        dst_dir = Path(args.copy_jsonl[1]).expanduser().resolve()
-        if not src_dir.exists():
-            raise SystemExit(f"copy-jsonl: SRC_DIR not found: {src_dir}")
-        dst_dir.mkdir(parents=True, exist_ok=True)
-        copied, clashes = copy_jsonl_flat(src_dir, dst_dir)
-        print(f"[{time.strftime('%F %T')}] copy-jsonl: {src_dir} -> {dst_dir} copied={copied} clashes={len(clashes)}")
-        if clashes:
-            for x in clashes[:20]:
-                print(f"  [warn] skip (exists): {x}", file=sys.stderr)
-            if len(clashes) > 20:
-                print(f"  ... and {len(clashes) - 20} more", file=sys.stderr)
-        return 0
-
-    if not args.config:
-        ap.error("-c/--config required when not using --copy-jsonl")
     pipeline_config_path = Path(args.config).expanduser().resolve()
     if not pipeline_config_path.exists():
         raise SystemExit(f"Config not found: {pipeline_config_path}")
@@ -451,7 +327,6 @@ def main(argv: List[str] | None = None) -> int:
         pipeline_env=env,
         config_dir=config_dir,
         root_dir=root_dir,
-        mode=args.mode,
     )
     return 0
 

@@ -4,7 +4,6 @@
 # --- Datapool (large artifacts) ---
 # Keep only skeleton files in git.
 datapool/**
-!datapool/README.md
 !datapool/**/.gitkeep
 
 # --- Python ---

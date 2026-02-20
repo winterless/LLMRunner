@@ -29,15 +29,8 @@ def main() -> int:
         print(f"Missing config: STEP_ENV_PATH not set or file not found: {step_env_path}", file=sys.stderr)
         return 2
     
-    config_path = step_env_path
-    
-    # If it's a .env file, error - user should migrate to .py
-    if config_path.suffix == ".env":
-        print(f"tokenize_cpt: .env files are deprecated, please migrate to .py config: {config_path}", file=sys.stderr)
-        return 2
-    
     # Load and resolve config
-    config = load_config_module(config_path)
+    config = load_config_module(step_env_path)
     merge_env_defaults(config, os.environ)
     context = {
         "DATAPOOL_ROOT": str(datapool_root),
@@ -138,7 +131,7 @@ def main() -> int:
             # Check if CPT_RAW_COPY_SRC is configured
             cpt_raw_copy_src = config.get("CPT_RAW_COPY_SRC")
             if cpt_raw_copy_src:
-                print(f"tokenize_cpt: Hint: Run 'python scripts/prepare_exp.py -c {step_env_path.parent.parent}/pipeline.env' to copy data from {cpt_raw_copy_src}", file=sys.stderr)
+                print(f"tokenize_cpt: Hint: Run 'python scripts/prepare_exp.py -c {step_env_path.parent.parent}/pipeline.py' to copy data from {cpt_raw_copy_src}", file=sys.stderr)
             else:
                 print(f"tokenize_cpt: Hint: Configure CPT_RAW_COPY_SRC in config and run 'prepare_exp' to copy data", file=sys.stderr)
             return 2
@@ -152,7 +145,7 @@ def main() -> int:
                 f"tokenize_cpt: INPUT_DATA_PATH must be under DATAPOOL_ROOT ({datapool_abs}) but got: {input_check}",
                 file=sys.stderr,
             )
-            print("tokenize_cpt: set ALLOW_EXTERNAL_PATHS=1 in pipeline.env to override", file=sys.stderr)
+            print("tokenize_cpt: set ALLOW_EXTERNAL_PATHS=1 in pipeline.py to override", file=sys.stderr)
             return 2
         
         if not str(output_prefix_abs).startswith(str(datapool_abs) + "/"):
@@ -160,7 +153,7 @@ def main() -> int:
                 f"tokenize_cpt: OUTPUT_PREFIX must be under DATAPOOL_ROOT ({datapool_abs}) but got: {output_prefix_abs}",
                 file=sys.stderr,
             )
-            print("tokenize_cpt: set ALLOW_EXTERNAL_PATHS=1 in pipeline.env to override", file=sys.stderr)
+            print("tokenize_cpt: set ALLOW_EXTERNAL_PATHS=1 in pipeline.py to override", file=sys.stderr)
             return 2
     
     # Build command

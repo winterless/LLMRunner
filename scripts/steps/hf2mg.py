@@ -22,10 +22,6 @@ def main() -> int:
     if not step_env_path or not step_env_path.exists():
         print(f"Missing config: STEP_ENV_PATH not set or file not found: {step_env_path}", file=sys.stderr)
         return 2
-    if step_env_path.suffix == ".env":
-        print(f"hf2mg: .env files are deprecated, please migrate to .py config: {step_env_path}", file=sys.stderr)
-        return 2
-
     config = load_config_module(step_env_path)
     context = {"ROOT_DIR": str(root_dir), "DATAPOOL_ROOT": str(datapool_root)}
     apply_pipeline_context(context, os.environ)
