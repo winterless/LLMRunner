@@ -92,6 +92,48 @@ def _iter_tokenize_step_configs(steps_dir: Path, step_type: str) -> List[Path]:
     return sorted(unique.values(), key=sort_key)
 
 
+def _iter_all_step_configs(steps_dir: Path) -> List[Path]:
+    if not steps_dir.exists():
+        return []
+    return sorted([p for p in steps_dir.glob("*.py") if p.is_file()], key=lambda p: p.name)
+
+
+def _ensure_data_path_dirs_from_config(
+    config: Dict[str, str],
+    *,
+    root_dir: Path,
+    source_config_name: str,
+) -> None:
+    for key, value in config.items():
+        if not (
+            isinstance(key, str)
+            and (key.endswith("DATA_PATH") or key.endswith("MODEL_PATH"))
+        ):
+            continue
+        if not isinstance(value, str):
+            continue
+        raw = value.strip()
+        if not raw:
+            continue
+
+        # If path contains glob-like syntax, create parent directory only.
+        has_glob_like = any(ch in raw for ch in ("*", "?", "[", "]", "{", "}"))
+        resolved = _resolve_path(raw, root_dir)
+        if has_glob_like:
+            target_dir = resolved.parent
+        elif key.endswith("INPUT_DATA_PATH") or raw.endswith("/"):
+            target_dir = resolved
+        else:
+            # Most non-input DATA_PATH values are file/prefix style; ensure parent exists.
+            target_dir = resolved.parent
+
+        target_dir.mkdir(parents=True, exist_ok=True)
+        print(
+            f"[{time.strftime('%F %T')}] ensure_dir[{source_config_name}]: "
+            f"{key} -> {target_dir}"
+        )
+
+
 def prepare_from_env(
     *,
     pipeline_env: Dict[str, str],
@@ -126,6 +168,16 @@ def prepare_from_env(
     steps_dir = config_dir / "steps"
     cpt_config_paths = _iter_tokenize_step_configs(steps_dir, "tokenize_cpt")
     sft_config_paths = _iter_tokenize_step_configs(steps_dir, "tokenize_sft")
+    all_step_config_paths = _iter_all_step_configs(steps_dir)
+
+    # Ensure directories for all *_DATA_PATH config vars across all steps.
+    for step_config_path in all_step_config_paths:
+        step_config = _load_step_config(step_config_path, root_dir=root_dir, datapool_root=datapool_root)
+        _ensure_data_path_dirs_from_config(
+            step_config,
+            root_dir=root_dir,
+            source_config_name=step_config_path.name,
+        )
 
     if not cpt_config_paths:
         print(f"[{time.strftime('%F %T')}] CPT_RAW_COPY_SRC: skipped (tokenize_cpt config not found)")
