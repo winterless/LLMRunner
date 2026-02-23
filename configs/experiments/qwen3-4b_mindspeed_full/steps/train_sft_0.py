@@ -3,8 +3,8 @@
 SCRIPT = "echo 7.train sft"
 
 # SFT train_config (exported as env for run_sft.sh)
-INPUT_MODEL_PATH = "${DATAPOOL_ROOT}/model/hf/ckpt_1000b"
-OUTPUT_MODEL_PATH = "${DATAPOOL_ROOT}/model/sft_checkpoints"
+INPUT_MODEL_PATH = "${DATAPOOL_ROOT}/model/cpt_checkpoints/mg_tp8"
+OUTPUT_MODEL_PATH = "${DATAPOOL_ROOT}/model/sft_checkpoints/mg_tp8"
 INPUT_DATA_PATH = "${DATAPOOL_ROOT}/data/tokenized/sft"
 TOKENIZER_PATH = "${BASE_MODEL_PATH}"
 
@@ -14,7 +14,7 @@ TP = 8
 GBS = 64
 MBS = 1
 SEQ_LEN = 32768
-TRAIN_ITERS = 13120
+TRAIN_ITERS = 1312
 SAVE_INTERVAL = 656
 EVAL_INTERVAL = 1000
 EVAL_ITERS = 0
