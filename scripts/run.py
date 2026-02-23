@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 import os
-import shutil
 import subprocess
 import sys
 import time
@@ -47,45 +46,6 @@ def tee_process(proc: subprocess.Popen, log_path: Path) -> int:
         return proc.wait()
 
 
-def clear_output_directory(output_dir: Path, step_name: str, dry_run: bool = False) -> None:
-    """
-    Clear output directory before running a step.
-    
-    Args:
-        output_dir: Directory to clear
-        step_name: Step name for logging
-        dry_run: If True, only print what would be cleared
-    """
-    if not output_dir.exists():
-        return
-    
-    if not output_dir.is_dir():
-        # If it's a file, remove it
-        if not dry_run:
-            output_dir.unlink()
-        return
-    
-    # Count files before clearing
-    files_before = list(output_dir.rglob("*"))
-    file_count = len([f for f in files_before if f.is_file()])
-    
-    if file_count == 0:
-        return
-    
-    if dry_run:
-        print(f"[dry-run] {step_name}: would clear {file_count} files from {output_dir}")
-        return
-    
-    # Clear directory contents (but keep the directory itself)
-    for item in output_dir.iterdir():
-        if item.is_file():
-            item.unlink()
-        elif item.is_dir():
-            shutil.rmtree(item)
-    
-    print(f"[{time.strftime('%F %T')}] {step_name}: cleared {file_count} files from {output_dir}")
-
-
 def _load_step_config(
     step_config_path: Path,
     root_dir: Path,
@@ -100,29 +60,8 @@ def _load_step_config(
         "DATAPOOL_ROOT": str(datapool_root),
         "ROOT_DIR": str(root_dir),
     }
-    for key in ["MODEL_PREFIX", "BASE_MODEL_PATH", "MEGATRON", "MINDSPEED"]:
-        if key in pipeline_env:
-            context[key] = pipeline_env[key]
+    context.update(pipeline_env)
     return resolve_config_vars(config, context)
-
-
-def get_step_output_dir(
-    step_obj: Step,
-    step_instance: StepInstance,
-    config_dir: Path,
-    root_dir: Path,
-    datapool_root: Path,
-    pipeline_env: Dict[str, str],
-) -> Optional[Path]:
-    """Get the output directory for a step by loading its config. Returns None if not clearable."""
-    step_config_path = resolve_step_config_path(step_obj, step_instance, config_dir)
-    if not step_config_path.exists():
-        return None
-    try:
-        config = _load_step_config(step_config_path, root_dir, datapool_root, pipeline_env)
-        return step_obj.get_output_dir(config, datapool_root)
-    except Exception:
-        return None
 
 
 def _normalize_instance_dict(item: Dict[str, Any], idx: int) -> Dict[str, Any]:
@@ -295,17 +234,7 @@ def run_step(
             "DATAPOOL_ROOT": datapool_root,
         }
     )
-    for key in [
-        "BASE_MODEL_NAME", "BASE_MODEL_SRC", "BASE_MODEL_PATH",
-        "TOKENIZER_PATH", "SFT_TOKENIZER_PATH",
-        "MODEL_PREFIX", "MEGATRON", "MINDSPEED", "ROOT",
-    ]:
-        if key in pipeline_env:
-            env[key] = pipeline_env[key]
-
-    output_dir = get_step_output_dir(step_obj, step_instance, config_dir, root_dir, Path(datapool_root), pipeline_env)
-    if output_dir:
-        clear_output_directory(output_dir, step_instance.instance_id, dry_run=(dry_run == "1"))
+    env.update(pipeline_env)
 
     # Load resolved step config once for script-mode execution and env export.
     resolved_step_config: Dict[str, Any] = {}

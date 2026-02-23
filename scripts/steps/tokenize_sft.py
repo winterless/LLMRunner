@@ -36,7 +36,6 @@ def main() -> int:
         "DATAPOOL_ROOT": str(datapool_root),
         "ROOT_DIR": str(root_dir),
     }
-    # Add pipeline config variables (BASE_MODEL_NAME, BASE_MODEL_SRC, BASE_MODEL_PATH, MODEL_PREFIX, MEGATRON, MINDSPEED)
     apply_pipeline_context(context, os.environ)
     config = resolve_config_vars(config, context)
     

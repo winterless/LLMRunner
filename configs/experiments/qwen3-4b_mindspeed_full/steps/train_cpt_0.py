@@ -11,15 +11,15 @@ OUTPUT_PREFIX = ""
 ds_prefix = "ds"
 
 MODEL_TYPE = "qwen3_4b"
-TP = 2
+TP = 8
 PP = 1
 gbs = 1024
 
 train_iters = 11922
 save_interval = 3974
 
-lr = "3e-4"
-min_lr = "3e-5"
+lr = "2e-5"
+min_lr = "2e-6"
 lr_decay_style = "cosine"
 lr_decay_iters = 11922
 lr_warmup_iters = 119

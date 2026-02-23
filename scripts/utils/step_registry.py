@@ -12,9 +12,10 @@ and experiment steps/<name>.py.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Dict, List
 
 STEP_TYPES_IN_ORDER: List[str] = [
+    "udataset",
     "tokenize_cpt",
     "tokenize_sft",
     "train_cpt",
@@ -23,48 +24,6 @@ STEP_TYPES_IN_ORDER: List[str] = [
     "train_sft",
     "eval",
 ]
-
-
-def _output_dir_from_prefix(config: Dict[str, Any], key: str = "OUTPUT_PREFIX") -> Optional[Path]:
-    p = config.get(key)
-    return Path(p).parent if p else None
-
-
-def _output_dir_from_dir(config: Dict[str, Any], *keys: str, default: Optional[Path] = None) -> Optional[Path]:
-    for k in keys:
-        p = config.get(k)
-        if p:
-            return Path(p)
-    return default
-
-
-# Per-step output-dir logic for clearing before run. Returns None if step has no clearable output.
-def _get_output_dir_tokenize_cpt(config: Dict[str, Any], datapool_root: Path) -> Optional[Path]:
-    return _output_dir_from_prefix(config, "OUTPUT_PREFIX")
-
-
-def _get_output_dir_tokenize_sft(config: Dict[str, Any], datapool_root: Path) -> Optional[Path]:
-    return _output_dir_from_prefix(config, "OUTPUT_PREFIX") or _output_dir_from_prefix(config, "SFT_OUTPUT_PREFIX")
-
-
-def _get_output_dir_mg2hf(config: Dict[str, Any], datapool_root: Path) -> Optional[Path]:
-    return _output_dir_from_dir(config, "OUT_HF_DIR", "OUTPUT_DIR", "HF_OUTPUT_DIR") or (datapool_root / "model" / "hf")
-
-
-def _get_output_dir_eval(config: Dict[str, Any], datapool_root: Path) -> Optional[Path]:
-    return _output_dir_from_dir(config, "OUTPUT_DIR", "REPORT_DIR") or (datapool_root / "reports")
-
-
-# Step type -> (output_dir getter or None)
-_OUTPUT_DIR_GETTERS: Dict[str, Optional[Callable[[Dict[str, Any], Path], Optional[Path]]]] = {
-    "tokenize_cpt": _get_output_dir_tokenize_cpt,
-    "tokenize_sft": _get_output_dir_tokenize_sft,
-    "train_cpt": None,
-    "mg2hf": _get_output_dir_mg2hf,
-    "hf2mg": None,
-    "train_sft": None,
-    "eval": _get_output_dir_eval,
-}
 
 
 class Step:
@@ -95,19 +54,6 @@ class Step:
     def resolve_config_path(self, config_dir: Path, occurrence_index: int = 0) -> Path:
         """Path to use for config. First run of this step type → 0, second → 1, etc."""
         return self.config_path(config_dir, occurrence_index)
-
-    def get_output_dir(
-        self,
-        config: Dict[str, Any],
-        datapool_root: Path,
-    ) -> Optional[Path]:
-        getter = _OUTPUT_DIR_GETTERS.get(self.name)
-        if getter is None:
-            return None
-        try:
-            return getter(config, datapool_root)
-        except Exception:
-            return None
 
     def __repr__(self) -> str:
         return f"Step({self.name!r})"

@@ -2,7 +2,8 @@
 
 INCLUDE = "../../common/pipeline_mindspeed.py"
 
-DATAPOOL_ROOT = "${DATAPOOL}/experiments/qwen3-4b_mindspeed_full"
+EXPERIMENT_NAME = "qwen3-4b_mindspeed_full"
+DATAPOOL_ROOT = "${DATAPOOL}/experiments/" + EXPERIMENT_NAME
 DRY_RUN = 0
 
 # Pipeline uses explicit Step Instance entries.

@@ -120,36 +120,22 @@ def resolve_config_vars(config: Dict[str, Any], context: Dict[str, str]) -> Dict
     return resolved
 
 
-ENV_IMPORT_KEYS = [
-    "DATAPOOL",
-    "ROOT",
-    "BASE_MODEL_SRC",
-    "BASE_MODEL_PATH",
-    "MINDSPEED",
-    "MINDSPEED_LLM",
-    "CPT_RAW_COPY_SRC",
-    "SFT_RAW_COPY_SRC",
-    "TOKENIZER_PATH",
-    "SFT_TOKENIZER_PATH",
-]
-
-
 def apply_env_imports(context: Dict[str, str], environ: Dict[str, str]) -> None:
     """
-    Import selected environment variables into context for ${VAR} expansion.
+    Import environment variables into context for ${VAR} expansion.
+    Full pass-through; filtering can be added later if needed.
     """
-    for key in ENV_IMPORT_KEYS:
-        if key in environ:
-            context[key] = environ[key]
+    for key, value in environ.items():
+        context[key] = str(value)
 
 
 def merge_env_defaults(config: Dict[str, Any], environ: Dict[str, str]) -> None:
     """
-    Populate config with selected env vars (env overrides config).
+    Populate config with env vars (env overrides config).
+    Full pass-through; filtering can be added later if needed.
     """
-    for key in ENV_IMPORT_KEYS:
-        if key in environ:
-            config[key] = environ[key]
+    for key, value in environ.items():
+        config[key] = str(value)
 
 
 def require_config(config: Dict[str, Any], key: str, step_name: str = "") -> str:

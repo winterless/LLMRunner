@@ -9,17 +9,6 @@ from typing import Any, Optional
 
 from config import apply_env_imports
 
-PIPELINE_CONTEXT_KEYS = [
-    "BASE_MODEL_NAME",
-    "BASE_MODEL_SRC",
-    "BASE_MODEL_PATH",
-    "TOKENIZER_PATH",
-    "SFT_TOKENIZER_PATH",
-    "MODEL_PREFIX",
-    "MEGATRON",
-    "MINDSPEED",
-]
-
 
 def run_extern_script(
     config: dict[str, Any],
@@ -50,9 +39,7 @@ def run_extern_script(
 
 
 def apply_pipeline_context(context: dict[str, str], environ: dict[str, str]) -> None:
-    for key in PIPELINE_CONTEXT_KEYS:
-        if key in environ:
-            context[key] = environ[key]
+    """Full pass-through of environ to context (uses apply_env_imports)."""
     apply_env_imports(context, environ)
 
 
