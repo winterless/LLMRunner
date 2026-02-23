@@ -11,6 +11,93 @@ from pathlib import Path
 from typing import List, Tuple
 import json
 
+# Valid single-char escapes after \ in JSON strings (RFC 8259)
+_JSON_ESCAPE_CHARS = frozenset('"\\/bfnrt')
+_HEX_CHARS = frozenset('0123456789abcdefABCDEF')
+
+
+def _fix_invalid_json_escapes(line: str) -> str:
+    """
+    Fix invalid escape sequences inside JSON string values only.
+    Valid escapes after \\ are: \" \\ \\/ \\b \\f \\n \\r \\t \\uXXXX.
+    Any \\ followed by other char (e.g. \\s, \\1) is invalid; we escape the backslash (\\ -> \\\\).
+    """
+    result: List[str] = []
+    i = 0
+    n = len(line)
+    in_string = False
+
+    while i < n:
+        c = line[i]
+        if not in_string:
+            result.append(c)
+            if c == '"':
+                in_string = True
+            i += 1
+            continue
+
+        # Inside a double-quoted string
+        if c != '\\':
+            result.append(c)
+            if c == '"':
+                in_string = False
+            i += 1
+            continue
+
+        # We saw \ inside a string
+        if i + 1 >= n:
+            result.append('\\')  # trailing backslash, make it escaped
+            i += 1
+            continue
+        next_c = line[i + 1]
+        if next_c in _JSON_ESCAPE_CHARS:
+            result.append(c)
+            result.append(next_c)
+            i += 2
+            continue
+        if next_c == 'u':
+            # \uXXXX - need 4 hex digits
+            if i + 5 <= n and all(line[i + 2 + k] in _HEX_CHARS for k in range(4)):
+                result.append(line[i : i + 6])
+                i += 6
+                continue
+            # invalid \u (e.g. \uXX or \uXXXX with non-hex)
+            result.append('\\')
+            result.append('\\')
+            result.append(next_c)
+            i += 2
+            continue
+        # Invalid escape: \X -> \\X
+        result.append('\\')
+        result.append('\\')
+        result.append(next_c)
+        i += 2
+
+    return "".join(result)
+
+
+def _normalize_jsonl_line(line: str) -> str:
+    """
+    Return a line that is valid JSON. If the line already parses, return as-is.
+    If it fails due to invalid escape, fix and return; otherwise re-raise.
+    """
+    try:
+        json.loads(line)
+        return line
+    except json.JSONDecodeError as e:
+        if "escape" not in e.msg.lower():
+            raise
+    fixed = _fix_invalid_json_escapes(line)
+    try:
+        json.loads(fixed)
+        return fixed
+    except json.JSONDecodeError as e2:
+        raise json.JSONDecodeError(
+            f"Invalid escape fix failed: {e2.msg}",
+            e2.doc,
+            e2.pos,
+        ) from e2
+
 
 def merge_jsonl_files(
     input_files: List[Path],
@@ -62,6 +149,12 @@ def merge_jsonl_files(
                     line = line.strip()
                     if not line:  # Skip empty lines
                         continue
+                    try:
+                        line = _normalize_jsonl_line(line)
+                    except json.JSONDecodeError as e:
+                        raise ValueError(
+                            f"Invalid JSON in {input_file} line {line_num}: {e.msg}"
+                        ) from e
                     if rng is None:
                         out_f.write(line + "\n")
                     else:
