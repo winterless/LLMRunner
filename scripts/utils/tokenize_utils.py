@@ -14,6 +14,14 @@ import json
 # Valid single-char escapes after \ in JSON strings (RFC 8259)
 _JSON_ESCAPE_CHARS = frozenset('"\\/bfnrt')
 _HEX_CHARS = frozenset('0123456789abcdefABCDEF')
+# Control chars that must be escaped in JSON strings; when we emit after \\ we use this
+_JSON_CONTROL_ESCAPES = {
+    "\n": "\\n",
+    "\r": "\\r",
+    "\t": "\\t",
+    "\b": "\\b",
+    "\f": "\\f",
+}
 
 
 def _fix_invalid_json_escapes(line: str) -> str:
@@ -44,9 +52,10 @@ def _fix_invalid_json_escapes(line: str) -> str:
             i += 1
             continue
 
-        # We saw \ inside a string
+        # We saw \ inside a string (no next char: trailing backslash)
         if i + 1 >= n:
-            result.append('\\')  # trailing backslash, make it escaped
+            result.append('\\')
+            result.append('\\')
             i += 1
             continue
         next_c = line[i + 1]
@@ -56,21 +65,25 @@ def _fix_invalid_json_escapes(line: str) -> str:
             i += 2
             continue
         if next_c == 'u':
-            # \uXXXX - need 4 hex digits
+            # \uXXXX - need 4 hex digits; valid one: copy as-is
             if i + 5 <= n and all(line[i + 2 + k] in _HEX_CHARS for k in range(4)):
                 result.append(line[i : i + 6])
                 i += 6
                 continue
-            # invalid \u (e.g. \uXX or \uXXXX with non-hex)
-            result.append('\\')
-            result.append('\\')
-            result.append(next_c)
-            i += 2
+            # invalid \u: pass through unchanged so parse still fails and user sees error
+            num_tail = min(4, n - (i + 2))
+            result.append(line[i : i + 2 + num_tail])
+            i += 2 + num_tail
             continue
-        # Invalid escape: \X -> \\X
+        # Invalid escape: \X -> \\X (control chars must be JSON-escaped in output)
         result.append('\\')
         result.append('\\')
-        result.append(next_c)
+        if next_c in _JSON_CONTROL_ESCAPES:
+            result.append(_JSON_CONTROL_ESCAPES[next_c])
+        elif ord(next_c) < 0x20:
+            result.append(f"\\u{ord(next_c):04x}")
+        else:
+            result.append(next_c)
         i += 2
 
     return "".join(result)
