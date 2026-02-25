@@ -13,7 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "utils"))
 from config import load_config_module, merge_env_defaults, resolve_config_vars, require_config, require_path_exists
 from step_utils import apply_pipeline_context, resolve_path, run_extern_script
-from tokenize_utils import expand_input_pattern, rewrite_sft_jsonl_to_input_label
+from tokenize_utils import expand_input_pattern, merged_input_exists, rewrite_sft_jsonl_to_input_label
 
 
 def main() -> int:
@@ -99,9 +99,9 @@ def main() -> int:
     tokenizer_path_abs = resolve_path(tokenizer_path, root_dir)
     output_prefix_abs = resolve_path(output_prefix, root_dir)
     input_dir_abs = resolve_path(input_path, root_dir)
-    # merged_input.jsonl lives under raw/sft (same as prepare_exp) so it is not cleared with tokenized/sft
-    merge_output = (input_dir_abs / "merged_input.jsonl") if input_dir_abs.is_dir() else (input_dir_abs.parent / "merged_input.jsonl")
-    
+    # Merged chunks: merged_input_0.jsonl, merged_input_1.jsonl, ... under this dir (not cleared with tokenized/sft)
+    merge_output_dir = input_dir_abs if input_dir_abs.is_dir() else input_dir_abs.parent
+
     # Extract required keys from JSON_KEYS for filtering during merge.
     # If we are rewriting to input/label/text, allow mixed raw formats and skip filtering here.
     rewrite_input_label = str(config.get("REWRITE_INPUT_LABEL", "0")) == "1"
@@ -118,9 +118,9 @@ def main() -> int:
         input_abs = str(resolve_path(input_path, root_dir))
     else:
         if merge_jsonl:
-            merged_ready = merge_output.exists()
+            merged_ready = merged_input_exists(merge_output_dir)
             if merged_ready:
-                input_abs = str(merge_output)
+                input_abs = str(merge_output_dir)
             else:
                 input_abs = ""
         else:
@@ -131,7 +131,6 @@ def main() -> int:
                     input_path,
                     root_dir,
                     merge_files=merge_jsonl,
-                    merge_output=merge_output,
                     required_json_keys=required_keys,
                     shuffle=shuffle_jsonl,
                     shuffle_seed=int(shuffle_seed) if shuffle_seed else None,
@@ -154,19 +153,35 @@ def main() -> int:
         input_template = config.get("PROMPT_INPUT_TEMPLATE", "### Input:\n{input}\n")
         response_prefix = config.get("PROMPT_RESPONSE_PREFIX", "### Response:\n")
         rewrite_output = config.get("REWRITE_OUTPUT_FILE")
+        input_path_obj = Path(input_abs)
         if rewrite_output:
             rewrite_output_abs = resolve_path(rewrite_output, root_dir)
         else:
-            rewrite_output_abs = Path(input_abs).parent / "sft_input_label.jsonl"
+            rewrite_output_abs = input_path_obj.parent / "sft_input_label.jsonl"
         print(f"tokenize_sft: rewriting input/label -> {rewrite_output_abs}")
         if not dry_run:
-            rewrite_sft_jsonl_to_input_label(
-                Path(input_abs),
-                rewrite_output_abs,
-                prompt_template,
-                input_template,
-                response_prefix,
-            )
+            if input_path_obj.is_dir():
+                input_files = sorted(input_path_obj.glob("merged_input_*.jsonl"))
+                if not input_files:
+                    print("tokenize_sft: no merged_input_*.jsonl in directory", file=sys.stderr)
+                    return 2
+                for i, one_file in enumerate(input_files):
+                    rewrite_sft_jsonl_to_input_label(
+                        one_file,
+                        rewrite_output_abs,
+                        prompt_template,
+                        input_template,
+                        response_prefix,
+                        append=(i > 0),
+                    )
+            else:
+                rewrite_sft_jsonl_to_input_label(
+                    input_path_obj,
+                    rewrite_output_abs,
+                    prompt_template,
+                    input_template,
+                    response_prefix,
+                )
         input_abs = str(rewrite_output_abs)
     
     # Validate paths are under datapool (unless allowed)

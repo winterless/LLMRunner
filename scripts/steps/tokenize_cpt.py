@@ -13,7 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "utils"))
 from config import load_config_module, merge_env_defaults, resolve_config_vars, require_config, require_path_exists
 from step_utils import apply_pipeline_context, resolve_path, run_extern_script
-from tokenize_utils import expand_input_pattern
+from tokenize_utils import expand_input_pattern, merged_input_exists
 
 
 def main() -> int:
@@ -90,9 +90,9 @@ def main() -> int:
     tokenizer_path_abs = resolve_path(tokenizer_path, root_dir)
     output_prefix_abs = resolve_path(output_prefix, root_dir)
     input_dir_abs = resolve_path(input_path, root_dir)
-    # merged_input.jsonl lives under raw/cpt (same as prepare_exp) so it is not cleared with tokenized/cpt
-    merge_output = (input_dir_abs / "merged_input.jsonl") if input_dir_abs.is_dir() else (input_dir_abs.parent / "merged_input.jsonl")
-    
+    # Merged chunks: merged_input_0.jsonl, merged_input_1.jsonl, ... under this dir (not cleared with tokenized/cpt)
+    merge_output_dir = input_dir_abs if input_dir_abs.is_dir() else input_dir_abs.parent
+
     # Extract required keys from JSON_KEYS for filtering during merge
     # This ensures consistent behavior: always create merged_input.jsonl even for single file
     if isinstance(json_keys, str):
@@ -105,9 +105,9 @@ def main() -> int:
         input_abs = str(resolve_path(input_path, root_dir))
     else:
         if merge_jsonl:
-            merged_ready = merge_output.exists()
+            merged_ready = merged_input_exists(merge_output_dir)
             if merged_ready:
-                input_abs = str(merge_output)
+                input_abs = str(merge_output_dir)
             else:
                 input_abs = ""
         else:
@@ -118,7 +118,6 @@ def main() -> int:
                     input_path,
                     root_dir,
                     merge_files=merge_jsonl,
-                    merge_output=merge_output,
                     required_json_keys=required_keys,
                     shuffle=shuffle_jsonl,
                     shuffle_seed=int(shuffle_seed) if shuffle_seed else None,

@@ -4,6 +4,7 @@ Utilities for tokenization steps, including JSONL merging.
 """
 from __future__ import annotations
 
+import os
 import random
 import shutil
 import sys
@@ -112,6 +113,131 @@ def _normalize_jsonl_line(line: str) -> str:
         ) from e2
 
 
+# Default max bytes per merged output file (~400MB); when exceeded, next chunk is merged_input_{n+1}.jsonl
+DEFAULT_MERGE_MAX_FILE_BYTES = 400 * 1024 * 1024
+
+
+def _merged_input_first_path(output_dir: Path) -> Path:
+    """Path to first merged chunk (merged_input_0.jsonl). Used for 'already merged' check."""
+    return output_dir / "merged_input_0.jsonl"
+
+
+def merged_input_exists(output_dir: Path) -> bool:
+    """True if merge has already been done (merged_input_0.jsonl exists)."""
+    return _merged_input_first_path(output_dir).exists()
+
+
+def merge_jsonl_files_to_splits(
+    input_files: List[Path],
+    output_dir: Path,
+    max_file_bytes: int = DEFAULT_MERGE_MAX_FILE_BYTES,
+    required_keys: List[str] | None = None,
+    *,
+    shuffle: bool = False,
+    shuffle_seed: int | None = None,
+    shuffle_buffer: int = 10000,
+) -> List[Path]:
+    """
+    Merge multiple JSONL files into one or more chunked files by size.
+
+    Writes merged_input_0.jsonl, merged_input_1.jsonl, ... under output_dir.
+    When the current file size would exceed max_file_bytes, output switches to
+    the next file. Output is written line-by-line (no key filtering).
+
+    Args:
+        input_files: List of input JSONL file paths
+        output_dir: Directory for merged_input_0.jsonl, merged_input_1.jsonl, ...
+        max_file_bytes: Max bytes per output file (~400MB default)
+        required_keys: Ignored (kept for compatibility)
+
+    Returns:
+        List of output file paths created (at least one).
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    rng = random.Random(shuffle_seed) if shuffle else None
+    buffer: List[str] = []
+    out_paths: List[Path] = []
+    chunk_index = 0
+    current_size = 0
+    out_f = None
+
+    def open_next_chunk():
+        nonlocal out_f, chunk_index, current_size, out_paths
+        if out_f is not None:
+            out_f.close()
+            out_f = None
+        out_path = output_dir / f"merged_input_{chunk_index}.jsonl"
+        out_paths.append(out_path)
+        out_f = open(out_path, "w", encoding="utf-8")
+        current_size = 0
+        chunk_index += 1
+
+    def write_line(line: str) -> None:
+        nonlocal current_size
+        if out_f is None:
+            open_next_chunk()
+        out_f.write(line)
+        current_size += len(line)
+        if max_file_bytes and current_size >= max_file_bytes:
+            open_next_chunk()
+
+    def flush_buffer() -> None:
+        nonlocal buffer
+        if not buffer:
+            return
+        if rng is not None:
+            rng.shuffle(buffer)
+        for line in buffer:
+            write_line(line)
+        buffer.clear()
+
+    ordered_files = sorted(input_files)
+    if rng is not None:
+        rng.shuffle(ordered_files)
+    total_lines = 0
+    try:
+        for input_file in ordered_files:
+            if not input_file.exists():
+                raise FileNotFoundError(f"Input file not found: {input_file}")
+            with open(input_file, "r", encoding="utf-8") as in_f:
+                for line_num, line in enumerate(in_f, start=1):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        line = _normalize_jsonl_line(line)
+                    except json.JSONDecodeError as e:
+                        raise ValueError(
+                            f"Invalid JSON in {input_file} line {line_num}: {e.msg}"
+                        ) from e
+                    if rng is None:
+                        if out_f is None:
+                            out_path = output_dir / f"merged_input_{chunk_index}.jsonl"
+                            out_paths.append(out_path)
+                            out_f = open(out_path, "w", encoding="utf-8")
+                            current_size = 0
+                            chunk_index += 1
+                        out_f.write(line + "\n")
+                        current_size += len(line) + 1
+                        if current_size >= max_file_bytes:
+                            out_f.close()
+                            out_f = None
+                            current_size = 0
+                    else:
+                        buffer.append(line + "\n")
+                        if len(buffer) >= shuffle_buffer:
+                            flush_buffer()
+                    total_lines += 1
+        if rng is not None:
+            flush_buffer()
+    finally:
+        if out_f is not None:
+            out_f.close()
+    if total_lines == 0:
+        raise ValueError(f"No valid lines found after merging {len(input_files)} files")
+    return out_paths
+
+
 def merge_jsonl_files(
     input_files: List[Path],
     output_file: Path,
@@ -190,6 +316,8 @@ def rewrite_sft_jsonl_to_input_label(
     prompt_template: str,
     input_template: str,
     response_prefix: str,
+    *,
+    append: bool = False,
 ) -> Tuple[int, int]:
     """
     Rewrite SFT jsonl into input/label (+text) format.
@@ -198,6 +326,7 @@ def rewrite_sft_jsonl_to_input_label(
         (written_lines, skipped_lines)
     """
     output_file.parent.mkdir(parents=True, exist_ok=True)
+    mode = "a" if append else "w"
 
     def to_text(value) -> str:
         if value is None:
@@ -239,7 +368,7 @@ def rewrite_sft_jsonl_to_input_label(
     written = 0
     skipped = 0
     with open(input_file, "r", encoding="utf-8") as in_f, open(
-        output_file, "w", encoding="utf-8"
+        output_file, mode, encoding="utf-8"
     ) as out_f:
         for line_num, line in enumerate(in_f, start=1):
             line = line.strip()
@@ -290,7 +419,6 @@ def expand_input_pattern(
     input_path: str,
     root_dir: Path,
     merge_files: bool = True,
-    merge_output: Path | None = None,
     required_json_keys: List[str] | None = None,
     *,
     shuffle: bool = False,
@@ -298,18 +426,21 @@ def expand_input_pattern(
     shuffle_buffer: int = 10000,
 ) -> Path:
     """
-    Expand input path (directory or single file) and merge into a single file.
-    
+    Expand input path (directory or single file) and merge into one or more chunked files.
+
+    Merge output is merged_input_0.jsonl, merged_input_1.jsonl, ... (new file when current
+    chunk exceeds ~400MB). When only one chunk is produced, returns that file path; when
+    multiple, returns the directory containing merged_input_*.jsonl.
+
     Args:
         input_path: Directory path or single file path (glob patterns are not supported)
         root_dir: Root directory for resolving relative paths
-        merge_files: If True (default), merge multiple files into one
-        merge_output: Path to write merged file (if None, uses default location)
+        merge_files: If True (default), merge multiple files into chunked outputs
         required_json_keys: Optional list of keys that must be present in each JSON object
-        
+
     Returns:
-        Path to the input file (single file or merged file)
-        
+        Path to the single merged file (merged_input_0.jsonl) or the directory of chunks.
+
     Raises:
         ValueError: If input_path contains glob characters
         FileNotFoundError: If input path does not exist
@@ -349,24 +480,27 @@ def expand_input_pattern(
     
     # Merge when multiple files are present (or if caller explicitly wants merge)
     if len(jsonl_files) > 1 or required_json_keys is not None:
-        # Need to merge
+        # Need to merge into one or more chunks (merged_input_0.jsonl, ...)
         if not merge_files:
             raise ValueError(
                 "MERGE_JSONL=0 is incompatible with multiple JSONL files. "
                 "Please enable MERGE_JSONL or provide a single .jsonl file."
             )
-        if merge_output is None:
-            # Default: merge to first file's directory with "merged.jsonl" name
-            merge_output = jsonl_files[0].parent / "merged.jsonl"
-        merge_jsonl_files(
+        output_dir = jsonl_files[0].parent
+        # Only VC_TASK_INDEX==0 or unset may generate merged_input_*.jsonl (avoid duplicate work in multi-worker)
+        if os.environ.get("VC_TASK_INDEX", "0") != "0":
+            return output_dir
+        out_paths = merge_jsonl_files_to_splits(
             jsonl_files,
-            merge_output,
+            output_dir,
             required_keys=None,
             shuffle=shuffle,
             shuffle_seed=shuffle_seed,
             shuffle_buffer=shuffle_buffer,
         )
-        return merge_output
+        if len(out_paths) == 1:
+            return out_paths[0]
+        return output_dir
     else:
         # Single file, no required keys, no merge needed: return it directly
         return jsonl_files[0]
